@@ -54,7 +54,7 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		cursor = "▶ "
 	}
 
-	badge := statusStyle(t.task.status).Render(strings.ToUpper(t.task.status))
+	badge := statusStyle(t.task.status).Render(statusBadge(t.task.status))
 
 	dim := lipgloss.NewStyle()
 	if t.task.status == "done" || t.task.status == "idle" {
@@ -112,4 +112,22 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	fmt.Fprintln(w, row1)
 	fmt.Fprintln(w, row2)
 	fmt.Fprint(w, row3)
+}
+
+// statusBadge returns the display label for a task status, matching the Python STATUS_META symbols.
+func statusBadge(status string) string {
+	switch status {
+	case "running":
+		return "▶  RUNNING"
+	case "waiting":
+		return "⏸  WAITING"
+	case "done":
+		return "✓  DONE   "
+	case "idle":
+		return "·  IDLE   "
+	case "failed":
+		return "✗  FAILED "
+	default:
+		return strings.ToUpper(status)
+	}
 }

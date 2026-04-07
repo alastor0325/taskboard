@@ -14,6 +14,8 @@ var (
 	headerStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
 	sectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).Underline(true)
 	btwStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	footerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	footerFilterStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
 	overlayStyle      = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("62")).
@@ -29,12 +31,14 @@ func (m Model) View() string {
 	btwBar := m.renderBTW()
 	tasksSection := m.renderTasks()
 	logSection := m.renderLog()
+	footer := m.renderFooter()
 
 	main := lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		tasksSection,
 		logSection,
 		btwBar,
+		footer,
 	)
 
 	if m.overlay != nil {
@@ -104,6 +108,22 @@ func (m Model) renderBTW() string {
 		line += ellipsis
 	}
 	return btwStyle.Render(line)
+}
+
+// renderFooter returns the keybinding help bar. In filter mode it shows the
+// current filter input and available actions; otherwise it shows all bindings.
+func (m Model) renderFooter() string {
+	if m.filtering {
+		return footerFilterStyle.Render(" / " + m.filterInput + "   Enter confirm  Esc clear ")
+	}
+	tasksLabel := " tasks "
+	logLabel := " log "
+	if m.focus == focusTasks {
+		tasksLabel = "[TASKS]"
+	} else {
+		logLabel = "[LOG]"
+	}
+	return footerStyle.Render(" Tab " + tasksLabel + " " + logLabel + "  ↑↓/jk scroll  g/G top/bot  <> resize  / filter  q quit ")
 }
 
 func renderOverlay(item taskItem, width, height int, behind string) string {

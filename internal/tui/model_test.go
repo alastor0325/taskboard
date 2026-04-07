@@ -299,6 +299,121 @@ func TestViewAfterResize(t *testing.T) {
 	_ = sf
 }
 
+func TestSplitResizeKeys(t *testing.T) {
+	m, _ := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+	initial := m2.splitRatio
+
+	// ">" increases split ratio
+	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(">")})
+	m3 := updated2.(Model)
+	if m3.splitRatio != initial+5 {
+		t.Errorf("> key: splitRatio got %d, want %d", m3.splitRatio, initial+5)
+	}
+
+	// "<" decreases split ratio
+	updated3, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("<")})
+	m4 := updated3.(Model)
+	if m4.splitRatio != initial {
+		t.Errorf("< key: splitRatio got %d, want %d", m4.splitRatio, initial)
+	}
+}
+
+func TestSplitRatioClamped(t *testing.T) {
+	m, _ := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+
+	// Drive ratio to minimum
+	m2.splitRatio = 20
+	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("<")})
+	m3 := updated2.(Model)
+	if m3.splitRatio < 20 {
+		t.Errorf("splitRatio should not go below 20, got %d", m3.splitRatio)
+	}
+
+	// Drive ratio to maximum
+	m2.splitRatio = 80
+	updated3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(">")})
+	m4 := updated3.(Model)
+	if m4.splitRatio > 80 {
+		t.Errorf("splitRatio should not exceed 80, got %d", m4.splitRatio)
+	}
+}
+
+func TestFooterNormalMode(t *testing.T) {
+	m, _ := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+
+	footer := m2.renderFooter()
+	for _, want := range []string{"Tab", "[TASKS]", "↑↓", "jk", "g/G", "<>", "filter", "quit"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("footer missing %q: %q", want, footer)
+		}
+	}
+	// log not focused
+	if !strings.Contains(footer, " log ") {
+		t.Errorf("footer should show ' log ' (unfocused) when tasks has focus")
+	}
+}
+
+func TestFooterLogFocus(t *testing.T) {
+	m, _ := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+	// Switch to log focus
+	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m3 := updated2.(Model)
+
+	footer := m3.renderFooter()
+	if !strings.Contains(footer, "[LOG]") {
+		t.Errorf("footer should show [LOG] when log has focus: %q", footer)
+	}
+	if !strings.Contains(footer, " tasks ") {
+		t.Errorf("footer should show ' tasks ' (unfocused) when log has focus: %q", footer)
+	}
+}
+
+func TestFooterFilterMode(t *testing.T) {
+	m, _ := newTestModel(t)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m2 := updated.(Model)
+	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m3 := updated2.(Model)
+	// Type a filter term
+	for _, ch := range "audio" {
+		updated3, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{ch}})
+		m3 = updated3.(Model)
+	}
+
+	footer := m3.renderFooter()
+	if !strings.Contains(footer, "audio") {
+		t.Errorf("footer filter mode should show filter input, got: %q", footer)
+	}
+	if !strings.Contains(footer, "Enter confirm") {
+		t.Errorf("footer filter mode should show confirm hint: %q", footer)
+	}
+	if !strings.Contains(footer, "Esc clear") {
+		t.Errorf("footer filter mode should show clear hint: %q", footer)
+	}
+}
+
+func TestViewContainsFooter(t *testing.T) {
+	m, sf := newTestModel(t)
+	m.lastMtime = time.Time{}
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+	m2 = m2.pollStatus()
+
+	view := m2.View()
+	if !strings.Contains(view, "quit") {
+		t.Errorf("View() should contain footer with 'quit': %q", view[:min(200, len(view))])
+	}
+	_ = sf
+}
+
 // TestTeatest uses the teatest framework to drive the model programmatically.
 func TestTeatestQuit(t *testing.T) {
 	m, _ := newTestModel(t)

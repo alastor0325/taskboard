@@ -33,6 +33,7 @@ type Model struct {
 	width       int
 	height      int
 	focus       focus
+	splitRatio  int // percentage of body height allocated to tasks (20–80)
 	taskList    list.Model
 	logViewport viewport.Model
 	btw         []types.BtwEntry
@@ -88,6 +89,7 @@ func New(proj, statusFile string) Model {
 		proj:        proj,
 		statusFile:  statusFile,
 		focus:       focusTasks,
+		splitRatio:  50,
 		taskList:    tl,
 		logViewport: vp,
 		spinner:     sp,
@@ -206,6 +208,16 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 		} else {
 			m.logViewport.LineUp(1)
 		}
+	case "<":
+		if m.splitRatio > 20 {
+			m.splitRatio -= 5
+			m = m.relayout()
+		}
+	case ">":
+		if m.splitRatio < 80 {
+			m.splitRatio += 5
+			m = m.relayout()
+		}
 	}
 	return m, tea.Batch(cmds...)
 }
@@ -249,13 +261,13 @@ func (m Model) handleMouse(msg tea.MouseMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd
 
 func (m *Model) relayout() Model {
 	// Each bordered section uses 2 border rows + 1 title row = 3 overhead rows.
-	// There are 2 sections (tasks + log), plus 1 header + 1 BTW bar = 8 fixed rows.
-	const fixedRows = 8 // 1 header + 3 tasks-border + 3 log-border + 1 btw
+	// 2 sections (tasks + log) + 1 header + 1 BTW bar + 1 footer = 9 fixed rows.
+	const fixedRows = 9 // 1 header + 3 tasks-border + 3 log-border + 1 btw + 1 footer
 	remaining := m.height - fixedRows
 	if remaining < 4 {
 		remaining = 4
 	}
-	tasksH := remaining * 50 / 100
+	tasksH := remaining * m.splitRatio / 100
 	if tasksH < 2 {
 		tasksH = 2
 	}
