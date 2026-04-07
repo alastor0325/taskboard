@@ -9,8 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alastor0325/taskboard/internal/launcher"
 	"github.com/alastor0325/taskboard/internal/project"
-	"github.com/alastor0325/taskboard/internal/store"
+	"github.com/alastor0325/taskboard/internal/selfexec"
 )
 
 const pollInterval = time.Second
@@ -19,7 +20,6 @@ func Run(proj string) error {
 	safe := project.Sanitize(proj)
 	pidFile := filepath.Join(os.TempDir(), ".taskboard-"+safe+"-watcher.pid")
 
-	// Write PID file.
 	if err := os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0o644); err != nil {
 		return fmt.Errorf("write pid: %w", err)
 	}
@@ -32,17 +32,11 @@ func Run(proj string) error {
 		info, err := os.Stat(teamFile)
 		if err == nil && info.ModTime().After(lastMtime) {
 			lastMtime = info.ModTime()
-			syncStatus(proj)
+			exec.Command(selfexec.Path(), "sync", "--project", proj).Run()
 		}
 		checkRelaunchMarker(proj, safe)
 		time.Sleep(pollInterval)
 	}
-}
-
-func syncStatus(proj string) {
-	st := store.New(project.TeamFile(proj))
-	_ = st // writeStatus called via CLI to keep logic in one place
-	exec.Command("taskboard", "sync", "--project", proj).Run()
 }
 
 func checkRelaunchMarker(proj, safe string) {
@@ -61,22 +55,7 @@ func checkRelaunchMarker(proj, safe string) {
 		return
 	}
 	os.Remove(marker)
-	launchTUIPane(proj)
-}
-
-func launchTUIPane(proj string) {
-	tmux := os.Getenv("TMUX")
-	if tmux != "" {
-		width := getWidth()
-		exec.Command("tmux", "split-window", "-h", "-p", strconv.Itoa(width),
-			"taskboard", "tui", "--project", proj).Run()
-		return
-	}
-	if os.Getenv("ZELLIJ_SESSION_NAME") != "" {
-		exec.Command("zellij", "action", "new-pane", "--direction", "right",
-			"--", "taskboard", "tui", "--project", proj).Run()
-		return
-	}
+	launcher.Open(proj, getWidth())
 }
 
 func getWidth() int {

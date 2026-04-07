@@ -96,10 +96,10 @@ type SetTaskOpts struct {
 	Worktree *string
 }
 
-func (s *TaskStore) SetTask(bugID string, opts SetTaskOpts) error {
+func (s *TaskStore) SetTask(bugID string, opts SetTaskOpts) (*Team, error) {
 	team, err := s.Load()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	task, ok := team.Tasks[bugID]
 	if !ok {
@@ -117,7 +117,7 @@ func (s *TaskStore) SetTask(bugID string, opts SetTaskOpts) error {
 		}
 		if task.Status != newStatus {
 			if !allowed[newStatus] {
-				return fmt.Errorf("invalid transition %q → %q for task %s", task.Status, newStatus, bugID)
+				return nil, fmt.Errorf("invalid transition %q → %q for task %s", task.Status, newStatus, bugID)
 			}
 			task.Status = newStatus
 			s.syncAgentStatus(team, bugID, newStatus)
@@ -129,13 +129,13 @@ func (s *TaskStore) SetTask(bugID string, opts SetTaskOpts) error {
 	if opts.Worktree != nil {
 		task.Worktree = *opts.Worktree
 	}
-	return s.Save(team)
+	return team, s.Save(team)
 }
 
-func (s *TaskStore) MarkDone(bugID string) error {
+func (s *TaskStore) MarkDone(bugID string) (*Team, error) {
 	team, err := s.Load()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	task, ok := team.Tasks[bugID]
 	if !ok {
@@ -146,7 +146,7 @@ func (s *TaskStore) MarkDone(bugID string) error {
 	now := float64(time.Now().Unix())
 	task.DoneAt = &now
 	s.syncAgentStatus(team, bugID, "done")
-	return s.Save(team)
+	return team, s.Save(team)
 }
 
 func (s *TaskStore) MarkAgentDead(section, name string) error {

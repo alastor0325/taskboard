@@ -69,7 +69,7 @@ func TestBtwTTL(t *testing.T) {
 	// Write old entry directly (timestamp in the past)
 	old := types.BtwEntry{Time: float64(time.Now().Unix() - 200), Agent: "old-agent", Message: "old"}
 	fresh := types.BtwEntry{Time: float64(time.Now().Unix()), Agent: "fresh-agent", Message: "new"}
-	import_json_via_indirect_write(t, btwPath, []types.BtwEntry{old, fresh})
+	mustWriteJSON(t, btwPath, []types.BtwEntry{old, fresh})
 
 	active, err := loadBtw(lf)
 	if err != nil {
@@ -83,7 +83,7 @@ func TestBtwTTL(t *testing.T) {
 	}
 }
 
-func import_json_via_indirect_write(t *testing.T, path string, v any) {
+func mustWriteJSON(t *testing.T, path string, v any) {
 	t.Helper()
 	if err := writeJSON(path, v); err != nil {
 		t.Fatal(err)

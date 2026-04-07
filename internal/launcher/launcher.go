@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+
+	"github.com/alastor0325/taskboard/internal/selfexec"
 )
 
 // Open detects the active multiplexer and splits a pane for the TUI.
@@ -23,7 +25,7 @@ func openTmux(proj string, widthPercent int) error {
 	return exec.Command(
 		"tmux", "split-window", "-h",
 		"-p", strconv.Itoa(widthPercent),
-		"taskboard", "tui", "--project", proj,
+		selfexec.Path(), "tui", "--project", proj,
 	).Run()
 }
 
@@ -31,6 +33,6 @@ func openZellij(proj string) error {
 	return exec.Command(
 		"zellij", "action", "new-pane",
 		"--direction", "right",
-		"--", "taskboard", "tui", "--project", proj,
+		"--", selfexec.Path(), "tui", "--project", proj,
 	).Run()
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strconv"
 
@@ -36,7 +37,11 @@ func ensureReviewServer() {
 		return
 	}
 	// Start review server in background.
-	cmd := exec.Command("taskboard", "review-server")
+	self, _ := os.Executable()
+	if self == "" {
+		self = "taskboard"
+	}
+	cmd := exec.Command(self, "review-server")
 	cmd.Start()
 }
 

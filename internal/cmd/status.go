@@ -15,6 +15,10 @@ const maxLog = 100
 const btwTTL = 120.0
 const btwMaxEntries = 50
 
+func btwFilePath(logPath string) string {
+	return logPath[:len(logPath)-len(filepath.Ext(logPath))] + "-btw.json"
+}
+
 func loadLog(logPath string) ([]types.LogEntry, error) {
 	data, err := os.ReadFile(logPath)
 	if os.IsNotExist(err) {
@@ -23,7 +27,6 @@ func loadLog(logPath string) ([]types.LogEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Check log reset marker.
 	resetMarker := filepath.Join(os.TempDir(), ".taskboard-"+filepath.Base(filepath.Dir(logPath))+"-log-reset")
 	if info, err := os.Stat(resetMarker); err == nil {
 		if time.Since(info.ModTime()) < 10*time.Second {
@@ -38,8 +41,7 @@ func loadLog(logPath string) ([]types.LogEntry, error) {
 }
 
 func loadBtw(logPath string) ([]types.BtwEntry, error) {
-	btwPath := logPath[:len(logPath)-len(filepath.Ext(logPath))] + "-btw.json"
-	data, err := os.ReadFile(btwPath)
+	data, err := os.ReadFile(btwFilePath(logPath))
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -77,8 +79,8 @@ func appendLog(logPath, agent, message string) error {
 }
 
 func appendBtw(logPath, agent, message string) error {
-	btwPath := logPath[:len(logPath)-len(filepath.Ext(logPath))] + "-btw.json"
-	data, _ := os.ReadFile(btwPath)
+	bp := btwFilePath(logPath)
+	data, _ := os.ReadFile(bp)
 	var entries []types.BtwEntry
 	json.Unmarshal(data, &entries)
 
@@ -93,14 +95,10 @@ func appendBtw(logPath, agent, message string) error {
 	if len(filtered) > btwMaxEntries {
 		filtered = filtered[len(filtered)-btwMaxEntries:]
 	}
-	return writeJSON(btwPath, filtered)
+	return writeJSON(bp, filtered)
 }
 
-func writeStatus(proj string, st *store.TaskStore) error {
-	team, err := st.Load()
-	if err != nil {
-		return err
-	}
+func writeStatus(proj string, team *store.Team) error {
 	logPath := logFile(proj)
 	logEntries, _ := loadLog(logPath)
 	btwEntries, _ := loadBtw(logPath)
@@ -146,7 +144,6 @@ func writeLogResetMarker(proj string) {
 	os.WriteFile(marker, []byte{}, 0o644)
 }
 
-// printJSON prints v as indented JSON to stdout.
 func printJSON(v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

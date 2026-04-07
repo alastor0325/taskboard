@@ -61,7 +61,7 @@ func TestSetTaskNewTask(t *testing.T) {
 	s := tmpStore(t)
 	summary := "my task"
 	status := "running"
-	if err := s.SetTask("42", SetTaskOpts{Summary: &summary, Status: &status}); err != nil {
+	if _, err := s.SetTask("42", SetTaskOpts{Summary: &summary, Status: &status}); err != nil {
 		t.Fatal(err)
 	}
 	team, _ := s.Load()
@@ -84,7 +84,7 @@ func TestSetTaskPartialUpdate(t *testing.T) {
 	s.SetTask("1", SetTaskOpts{Summary: &summary, Status: &status})
 
 	note := "updated note"
-	if err := s.SetTask("1", SetTaskOpts{Note: &note}); err != nil {
+	if _, err := s.SetTask("1", SetTaskOpts{Note: &note}); err != nil {
 		t.Fatal(err)
 	}
 	team, _ := s.Load()
@@ -122,7 +122,7 @@ func TestValidTransitions(t *testing.T) {
 		s.Save(team)
 
 		newStatus := c.to
-		err := s.SetTask("1", SetTaskOpts{Status: &newStatus})
+		_, err := s.SetTask("1", SetTaskOpts{Status: &newStatus})
 		if c.ok && err != nil {
 			t.Errorf("transition %q→%q should succeed, got error: %v", c.from, c.to, err)
 		}
@@ -141,7 +141,7 @@ func TestMarkDone(t *testing.T) {
 	s.SetTask("5", SetTaskOpts{Status: &status})
 
 	before := time.Now().Unix()
-	if err := s.MarkDone("5"); err != nil {
+	if _, err := s.MarkDone("5"); err != nil {
 		t.Fatal(err)
 	}
 	after := time.Now().Unix()
@@ -163,7 +163,6 @@ func TestMarkDone(t *testing.T) {
 func TestMarkAgentDead(t *testing.T) {
 	s := tmpStore(t)
 	team := emptyTeam()
-	bugID := int64(99)
 	team.InvestigationAgents["99"] = &InvestigationAgent{AgentID: "inv-99", Status: "running"}
 	team.Tasks["99"] = &Task{Status: "running", Summary: "some task"}
 	s.Save(team)
@@ -178,7 +177,6 @@ func TestMarkAgentDead(t *testing.T) {
 	if loaded.Tasks["99"].Status != "failed" {
 		t.Error("task status should be failed")
 	}
-	_ = bugID
 }
 
 func TestCleanupDone(t *testing.T) {

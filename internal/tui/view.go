@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -57,10 +56,14 @@ func (m Model) renderHeader() string {
 func (m Model) renderTasks() string {
 	title := "TASKS"
 	content := lipgloss.NewStyle().Height(m.taskList.Height()).Render(m.taskList.View())
-	if m.focus == focusTasks {
-		return borderFocused.Width(m.width - 2).Render(title + "\n" + content)
+	innerW := m.width - 4 // 2 border chars each side
+	if innerW < 1 {
+		innerW = 1
 	}
-	return borderUnfocused.Width(m.width - 2).Render(title + "\n" + content)
+	if m.focus == focusTasks {
+		return borderFocused.Width(innerW).Render(title + "\n" + content)
+	}
+	return borderUnfocused.Width(innerW).Render(title + "\n" + content)
 }
 
 func (m Model) renderLog() string {
@@ -71,10 +74,14 @@ func (m Model) renderLog() string {
 		title += "  [/] filter: \"" + m.filterInput + "\""
 	}
 	content := m.logViewport.View()
-	if m.focus == focusLog {
-		return borderFocused.Width(m.width - 2).Render(title + "\n" + content)
+	innerW := m.width - 4
+	if innerW < 1 {
+		innerW = 1
 	}
-	return borderUnfocused.Width(m.width - 2).Render(title + "\n" + content)
+	if m.focus == focusLog {
+		return borderFocused.Width(innerW).Render(title + "\n" + content)
+	}
+	return borderUnfocused.Width(innerW).Render(title + "\n" + content)
 }
 
 func (m Model) renderBTW() string {
@@ -87,12 +94,11 @@ func (m Model) renderBTW() string {
 		parts = append(parts, sp+" "+e.Agent+"  "+e.Message)
 	}
 	line := strings.Join(parts, "  ·  ")
-	// Truncate to terminal width with ellipsis.
-	ellipsis := "…"
+	const ellipsis = "…"
 	if visibleWidth(line) > m.width-1 {
-		for visibleWidth(line)+utf8.RuneCountInString(ellipsis) > m.width-1 && len(line) > 0 {
-			_, size := utf8.DecodeLastRuneInString(line)
-			line = line[:len(line)-size]
+		for visibleWidth(line)+lipgloss.Width(ellipsis) > m.width-1 && len(line) > 0 {
+			runes := []rune(line)
+			line = string(runes[:len(runes)-1])
 		}
 		line += ellipsis
 	}
@@ -167,28 +173,5 @@ func overlayLine(bg, overlay string, x, maxW int) string {
 }
 
 func visibleWidth(s string) int {
-	// Strip ANSI escape sequences for width calculation.
-	inEsc := false
-	w := 0
-	for _, r := range s {
-		if inEsc {
-			if r == 'm' || r == 'K' || r == 'H' || r == 'J' {
-				inEsc = false
-			}
-			continue
-		}
-		if r == '\x1b' {
-			inEsc = true
-			continue
-		}
-		w++
-	}
-	return w
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	return lipgloss.Width(s)
 }

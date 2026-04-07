@@ -11,15 +11,24 @@ func runInit(args []string) error {
 	proj, _ := resolveProject(args)
 	writeLogResetMarker(proj)
 	st := newStore(proj)
+	team, err := st.Load()
+	if err != nil {
+		return err
+	}
 	if err := appendLog(logFile(proj), "manager", "session started"); err != nil {
 		return err
 	}
-	return writeStatus(proj, st)
+	return writeStatus(proj, team)
 }
 
 func runSync(args []string) error {
 	proj, _ := resolveProject(args)
-	return writeStatus(proj, newStore(proj))
+	st := newStore(proj)
+	team, err := st.Load()
+	if err != nil {
+		return err
+	}
+	return writeStatus(proj, team)
 }
 
 func runSetTask(args []string) error {
@@ -64,10 +73,11 @@ func runSetTask(args []string) error {
 		}
 	}
 	st := newStore(proj)
-	if err := st.SetTask(bugID, opts); err != nil {
+	team, err := st.SetTask(bugID, opts)
+	if err != nil {
 		return err
 	}
-	return writeStatus(proj, st)
+	return writeStatus(proj, team)
 }
 
 func runDoneTask(args []string) error {
@@ -75,12 +85,12 @@ func runDoneTask(args []string) error {
 	if len(rest) < 1 {
 		return fmt.Errorf("usage: taskboard done-task <bug_id>")
 	}
-	bugID := rest[0]
 	st := newStore(proj)
-	if err := st.MarkDone(bugID); err != nil {
+	team, err := st.MarkDone(rest[0])
+	if err != nil {
 		return err
 	}
-	return writeStatus(proj, st)
+	return writeStatus(proj, team)
 }
 
 func runClaimTask(args []string) error {
@@ -89,8 +99,7 @@ func runClaimTask(args []string) error {
 		return fmt.Errorf("usage: taskboard claim-task <bug_id> <agent>")
 	}
 	bugID, agent := rest[0], rest[1]
-	st := newStore(proj)
-	claimed, owner, err := st.ClaimTask(bugID, agent)
+	claimed, owner, err := newStore(proj).ClaimTask(bugID, agent)
 	if err != nil {
 		return err
 	}
@@ -106,8 +115,7 @@ func runWhoOwns(args []string) error {
 	if len(rest) < 1 {
 		return fmt.Errorf("usage: taskboard who-owns <bug_id>")
 	}
-	bugID := rest[0]
-	owner, err := newStore(proj).WhoOwns(bugID)
+	owner, err := newStore(proj).WhoOwns(rest[0])
 	if err != nil {
 		return err
 	}
@@ -123,8 +131,7 @@ func runFileConflicts(args []string) error {
 	if len(rest) < 1 {
 		return fmt.Errorf("usage: taskboard file-conflicts <bug_id>")
 	}
-	bugID := rest[0]
-	conflicts, err := newStore(proj).FileConflicts(bugID)
+	conflicts, err := newStore(proj).FileConflicts(rest[0])
 	if err != nil {
 		return err
 	}
@@ -139,11 +146,14 @@ func runLog(args []string) error {
 	if len(rest) < 2 {
 		return fmt.Errorf("usage: taskboard log <agent> <message>")
 	}
-	agent, message := rest[0], rest[1]
-	if err := appendLog(logFile(proj), agent, message); err != nil {
+	if err := appendLog(logFile(proj), rest[0], rest[1]); err != nil {
 		return err
 	}
-	return writeStatus(proj, newStore(proj))
+	team, err := newStore(proj).Load()
+	if err != nil {
+		return err
+	}
+	return writeStatus(proj, team)
 }
 
 func runBtw(args []string) error {
@@ -151,8 +161,7 @@ func runBtw(args []string) error {
 	if len(rest) < 2 {
 		return fmt.Errorf("usage: taskboard btw <agent> <message>")
 	}
-	agent, message := rest[0], rest[1]
-	return appendBtw(logFile(proj), agent, message)
+	return appendBtw(logFile(proj), rest[0], rest[1])
 }
 
 func runNotify(args []string) error {
@@ -161,21 +170,15 @@ func runNotify(args []string) error {
 		return fmt.Errorf("usage: taskboard notify <log|alert|done> <message>")
 	}
 	level, message := rest[0], rest[1]
-	_ = level // matrix-cli routing handled externally
 	if err := appendLog(logFile(proj), "notify", message); err != nil {
 		return err
 	}
-	// Attempt matrix-cli notification; failure is non-fatal.
-	matrixArgs := []string{"notify", level, message}
-	_ = matrixArgs
-	// matrix-cli is a separate tool; invoke it if available.
-	notifyMatrix(level, message)
-	return writeStatus(proj, newStore(proj))
-}
-
-func notifyMatrix(level, message string) {
-	// Best-effort: if matrix-cli is not installed, silently skip.
 	exec.Command("matrix-cli", "notify", level, message).Run()
+	team, err := newStore(proj).Load()
+	if err != nil {
+		return err
+	}
+	return writeStatus(proj, team)
 }
 
 func runAgentHealth(args []string) error {

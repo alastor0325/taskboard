@@ -243,8 +243,10 @@ func (m Model) handleMouse(msg tea.MouseMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd
 }
 
 func (m *Model) relayout() Model {
-	fixed := 2 // header + BTW bar
-	remaining := m.height - fixed
+	// Each bordered section uses 2 border rows + 1 title row = 3 overhead rows.
+	// There are 2 sections (tasks + log), plus 1 header + 1 BTW bar = 8 fixed rows.
+	const fixedRows = 8 // 1 header + 3 tasks-border + 3 log-border + 1 btw
+	remaining := m.height - fixedRows
 	if remaining < 4 {
 		remaining = 4
 	}
@@ -257,8 +259,8 @@ func (m *Model) relayout() Model {
 		logH = 2
 	}
 
-	m.taskList.SetSize(m.width, tasksH)
-	m.logViewport.Width = m.width
+	m.taskList.SetSize(m.width-4, tasksH) // -4 for left+right border chars
+	m.logViewport.Width = m.width - 4
 	m.logViewport.Height = logH
 	m.updateLogContent()
 	return *m
@@ -351,8 +353,8 @@ func padRight(s string, n int) string {
 }
 
 func hyperlink(url, label string) string {
-	// OSC 8 hyperlink: \x1b]8;;URL\x1b\\label\x1b]8;;\x1b\\
-	return "\x1b]8;;" + url + "\x1b\\\\" + label + "\x1b]8;;\x1b\\\\"
+	// OSC 8 hyperlink: ESC]8;;URL ESC\ label ESC]8;; ESC\
+	return "\x1b]8;;" + url + "\x1b\\" + label + "\x1b]8;;\x1b\\"
 }
 
 // statusStyle returns a lipgloss style for the given task status.
