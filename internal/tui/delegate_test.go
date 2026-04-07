@@ -108,3 +108,23 @@ func TestStatusBadgeUnknown(t *testing.T) {
 		t.Errorf("statusBadge(%q) = %q, want %q", "unknown", got, "UNKNOWN")
 	}
 }
+
+func TestIsBugID(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"2026875", true},
+		{"1962876", true},
+		{"0", true},
+		{"", false},
+		{"abc", false},
+		{"123abc", false},
+		{"my-task", false},
+	}
+	for _, c := range cases {
+		if got := isBugID(c.in); got != c.want {
+			t.Errorf("isBugID(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}

@@ -36,6 +36,16 @@ var (
 	dimStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
+// isBugID returns true if the task name is a numeric Bugzilla bug ID.
+func isBugID(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
 // statusColor returns the display color for a task status.
 func statusColor(status string) lipgloss.Color {
 	switch status {
@@ -76,24 +86,33 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		dim = dimStyle
 	}
 
-	// Build link set: [try] [rev] always [bug]; [inv] if investigation file exists.
+	// Build the bug ID cell: hyperlink to bugzilla if all-digit, plain otherwise.
 	bugURL := "https://bugzilla.mozilla.org/show_bug.cgi?id=" + t.task.bugID
+	var bugCell string
+	if isBugID(t.task.bugID) {
+		bugCell = dim.Render(hyperlink(bugURL, t.task.bugID))
+	} else {
+		bugCell = dim.Render(t.task.bugID)
+	}
+
 	var links []string
 	if t.task.tryURL != "" {
 		links = append(links, hyperlink(t.task.tryURL, "[try]"))
 	}
 	if t.task.revURL != "" {
-		links = append(links, hyperlink(t.task.revURL, "[rev]"))
+		links = append(links, hyperlink(t.task.revURL, "[review]"))
 	}
-	links = append(links, hyperlink(bugURL, "[bug]"))
 	if t.task.hasInv {
 		invURL := "https://github.com/alastor0325/firefox-bug-investigation/blob/main/bug-" + t.task.bugID + "-investigation.md"
 		links = append(links, invStyle.Render(hyperlink(invURL, "[inv]")))
 	}
-	linkStr := "  " + strings.Join(links, " ")
+	var linkStr string
+	if len(links) > 0 {
+		linkStr = "  " + strings.Join(links, " ")
+	}
 
 	row0 := fmt.Sprintf("%-10s  %s  %s%s",
-		dim.Render(t.task.bugID),
+		bugCell,
 		badge,
 		dim.Render(t.task.summary),
 		linkStr,

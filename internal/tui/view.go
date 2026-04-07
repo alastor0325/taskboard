@@ -63,7 +63,13 @@ func (m Model) renderHeader() string {
 
 func (m Model) renderTasks() string {
 	n := len(m.taskList.Items())
-	title := sectionTitleStyle.Render("TASKS") + countStyle.Render(fmt.Sprintf("  (%d)", n))
+	var countStr string
+	if n > 0 {
+		countStr = fmt.Sprintf("  (%d/%d)", m.taskList.Index()+1, n)
+	} else {
+		countStr = "  (0)"
+	}
+	title := sectionTitleStyle.Render("TASKS") + countStyle.Render(countStr)
 	content := lipgloss.NewStyle().Height(m.taskList.Height()).Render(m.taskList.View())
 	innerW := m.width - 4 // 2 border chars each side
 	if innerW < 1 {
@@ -214,7 +220,7 @@ func renderOverlay(item taskItem, width, height int, behind string) string {
 		lines = append(lines, "  try:       "+hyperlink(item.tryURL, "[treeherder]"))
 	}
 	if item.revURL != "" {
-		lines = append(lines, "  review:    "+hyperlink(item.revURL, "[localhost:7777]"))
+		lines = append(lines, "  review:    "+hyperlink(item.revURL, "[review]"))
 	}
 	bugURL := "https://bugzilla.mozilla.org/show_bug.cgi?id=" + item.bugID
 	lines = append(lines, "  bug:       "+hyperlink(bugURL, "[bugzilla "+item.bugID+"]"))

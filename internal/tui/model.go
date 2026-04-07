@@ -2,11 +2,13 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"hash/fnv"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -333,12 +335,17 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 				btwMsg = e.Message
 			}
 		}
+		var revURL string
+		if t.Worktree != "" && worktreeHasPatches(t.Worktree) {
+			revURL = reviewURL(t.Worktree)
+		}
 		item := taskItem{
 			bugID:    id,
 			summary:  t.Summary,
 			status:   t.Status,
 			note:     t.Note,
 			worktree: t.Worktree,
+			revURL:   revURL,
 			btwMsg:   btwMsg,
 			hasInv:   invFileExists(id),
 		}
@@ -387,6 +394,59 @@ var cachedHomeDir = sync.OnceValue(func() string {
 	return h
 })
 
+const worktreePatchCacheTTL = 30 * time.Second
+
+type wtCacheEntry struct {
+	has     bool
+	checkedAt time.Time
+}
+
+var (
+	wtCacheMu sync.Mutex
+	wtCache   = map[string]wtCacheEntry{}
+)
+
+// worktreeHasPatches returns true if the worktree has local commits on top of origin/main.
+// Results are cached for worktreePatchCacheTTL.
+func worktreeHasPatches(worktree string) bool {
+	now := time.Now()
+	wtCacheMu.Lock()
+	if e, ok := wtCache[worktree]; ok && now.Sub(e.checkedAt) < worktreePatchCacheTTL {
+		wtCacheMu.Unlock()
+		return e.has
+	}
+	wtCacheMu.Unlock()
+
+	expanded := strings.ReplaceAll(worktree, "~", cachedHomeDir())
+	out, err := exec.Command("git", "-C", expanded,
+		"log", "--oneline", "origin/main..HEAD").Output()
+	has := err == nil && len(strings.TrimSpace(string(out))) > 0
+
+	wtCacheMu.Lock()
+	wtCache[worktree] = wtCacheEntry{has: has, checkedAt: now}
+	wtCacheMu.Unlock()
+	return has
+}
+
+// reviewURL builds the local review-server URL for a worktree path.
+func reviewURL(worktree string) string {
+	base := filepath.Base(worktree)
+	fragment := strings.TrimPrefix(base, "firefox-")
+	return fmt.Sprintf("http://localhost:%d/#%s", reviewServerPort, fragment)
+}
+
+// reviewServerPort is the platform-specific port used by the review server.
+var reviewServerPort = func() int {
+	switch runtime.GOOS {
+	case "darwin":
+		return 7777
+	case "windows":
+		return 7778
+	default:
+		return 7779
+	}
+}()
+
 // invFileExists returns true if a firefox-bug-investigation file exists for the given bug ID.
 func invFileExists(bugID string) bool {
 	home := cachedHomeDir()
@@ -433,9 +493,11 @@ func (m *Model) updateLogContent() {
 	m.logViewport.SetContent(strings.Join(lines, "\n"))
 }
 
+var logLinkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
+
 func renderLogMessage(msg string) string {
 	return urlRe.ReplaceAllStringFunc(msg, func(url string) string {
-		return hyperlink(url, "[link]")
+		return logLinkStyle.Render(hyperlink(url, "[link]"))
 	})
 }
 
