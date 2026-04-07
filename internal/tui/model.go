@@ -1,0 +1,373 @@
+package tui
+
+import (
+	"encoding/json"
+	"os"
+	"regexp"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
+	"github.com/alastor0325/taskboard/internal/types"
+)
+
+type focus int
+
+const (
+	focusTasks focus = iota
+	focusLog
+)
+
+type Model struct {
+	proj        string
+	statusFile  string
+	width       int
+	height      int
+	focus       focus
+	taskList    list.Model
+	logViewport viewport.Model
+	btw         []types.BtwEntry
+	spinner     spinner.Model
+	overlay     *taskDetail
+	filterInput string
+	filtering   bool
+	lastMtime   time.Time
+	allLog      []types.LogEntry
+	tasks       []taskItem
+}
+
+type taskItem struct {
+	bugID   string
+	summary string
+	status  string
+	note    string
+	tryURL  string
+	revURL  string
+	worktree string
+	agents  []agentInfo
+}
+
+type agentInfo struct {
+	name   string
+	status string
+}
+
+type taskDetail struct {
+	item taskItem
+}
+
+var urlRe = regexp.MustCompile(`https?://\S+`)
+
+func New(proj, statusFile string) Model {
+	sp := spinner.New()
+	sp.Spinner = spinner.Dot
+
+	delegate := newTaskDelegate()
+	tl := list.New(nil, delegate, 0, 0)
+	tl.SetShowHelp(false)
+	tl.SetShowStatusBar(false)
+	tl.SetFilteringEnabled(false)
+	tl.Title = ""
+
+	vp := viewport.New(0, 0)
+	vp.MouseWheelEnabled = true
+	vp.MouseWheelDelta = 3
+
+	return Model{
+		proj:       proj,
+		statusFile: statusFile,
+		focus:      focusTasks,
+		taskList:   tl,
+		logViewport: vp,
+		spinner:    sp,
+	}
+}
+
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(
+		tea.SetWindowTitle("taskboard"),
+		tickCmd(),
+		m.spinner.Tick,
+	)
+}
+
+type tickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
+
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m = m.relayout()
+
+	case tickMsg:
+		m = m.pollStatus()
+		var spCmd tea.Cmd
+		m.spinner, spCmd = m.spinner.Update(msg)
+		cmds = append(cmds, spCmd, tickCmd())
+
+	case tea.KeyMsg:
+		if m.overlay != nil {
+			if msg.String() == "esc" {
+				m.overlay = nil
+			}
+			return m, tea.Batch(cmds...)
+		}
+		if m.filtering {
+			return m.handleFilterKey(msg, cmds)
+		}
+		return m.handleKey(msg, cmds)
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg, cmds)
+	}
+
+	// Propagate to focused component.
+	if m.overlay == nil {
+		switch m.focus {
+		case focusTasks:
+			var tlCmd tea.Cmd
+			m.taskList, tlCmd = m.taskList.Update(msg)
+			cmds = append(cmds, tlCmd)
+		case focusLog:
+			var vpCmd tea.Cmd
+			m.logViewport, vpCmd = m.logViewport.Update(msg)
+			cmds = append(cmds, vpCmd)
+		}
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		return m, tea.Quit
+	case "tab":
+		if m.focus == focusTasks {
+			m.focus = focusLog
+		} else {
+			m.focus = focusTasks
+		}
+	case "enter":
+		if m.focus == focusTasks {
+			if sel, ok := m.taskList.SelectedItem().(taskListItem); ok {
+				m.overlay = &taskDetail{item: sel.task}
+			}
+		}
+	case "g":
+		if m.focus == focusTasks {
+			m.taskList.Select(0)
+		} else {
+			m.logViewport.GotoTop()
+		}
+	case "G":
+		if m.focus == focusTasks {
+			m.taskList.Select(len(m.taskList.Items()) - 1)
+		} else {
+			m.logViewport.GotoBottom()
+		}
+	case "/":
+		if m.focus == focusLog {
+			m.filtering = true
+			m.filterInput = ""
+		}
+	case "j", "down":
+		if m.focus == focusTasks {
+			m.taskList, _ = m.taskList.Update(msg)
+		} else {
+			m.logViewport.LineDown(1)
+		}
+	case "k", "up":
+		if m.focus == focusTasks {
+			m.taskList, _ = m.taskList.Update(msg)
+		} else {
+			m.logViewport.LineUp(1)
+		}
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) handleFilterKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "enter":
+		m.filtering = false
+		m.updateLogContent()
+	case "backspace":
+		if len(m.filterInput) > 0 {
+			m.filterInput = m.filterInput[:len(m.filterInput)-1]
+			m.updateLogContent()
+		}
+	default:
+		if len(msg.Runes) > 0 {
+			m.filterInput += string(msg.Runes)
+			m.updateLogContent()
+		}
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) handleMouse(msg tea.MouseMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if m.focus == focusTasks {
+			m.taskList.CursorUp()
+		} else {
+			m.logViewport.LineUp(3)
+		}
+	case tea.MouseButtonWheelDown:
+		if m.focus == focusTasks {
+			m.taskList.CursorDown()
+		} else {
+			m.logViewport.LineDown(3)
+		}
+	}
+	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) relayout() Model {
+	fixed := 2 // header + BTW bar
+	remaining := m.height - fixed
+	if remaining < 4 {
+		remaining = 4
+	}
+	tasksH := remaining * 35 / 100
+	if tasksH < 2 {
+		tasksH = 2
+	}
+	logH := remaining - tasksH
+	if logH < 2 {
+		logH = 2
+	}
+
+	m.taskList.SetSize(m.width, tasksH)
+	m.logViewport.Width = m.width
+	m.logViewport.Height = logH
+	m.updateLogContent()
+	return *m
+}
+
+func (m *Model) pollStatus() Model {
+	info, err := os.Stat(m.statusFile)
+	if err != nil {
+		return *m
+	}
+	if !info.ModTime().After(m.lastMtime) {
+		return *m
+	}
+	m.lastMtime = info.ModTime()
+
+	data, err := os.ReadFile(m.statusFile)
+	if err != nil {
+		return *m
+	}
+	var status types.AgentStatus
+	if err := json.Unmarshal(data, &status); err != nil {
+		return *m
+	}
+
+	m.btw = status.Btw
+	m.allLog = status.Log
+	m.tasks = buildTaskItems(status)
+	m.refreshTaskList()
+	m.updateLogContent()
+	return *m
+}
+
+func buildTaskItems(status types.AgentStatus) []taskItem {
+	var items []taskItem
+	for id, t := range status.Tasks {
+		item := taskItem{
+			bugID:    id,
+			summary:  t.Summary,
+			status:   t.Status,
+			note:     t.Note,
+			worktree: t.Worktree,
+		}
+		items = append(items, item)
+	}
+	// Sort: FAILED and WAITING first, then RUNNING, then others.
+	priority := map[string]int{"failed": 0, "waiting": 1, "running": 2, "idle": 3, "done": 4}
+	sort.Slice(items, func(i, j int) bool {
+		pi := priority[items[i].status]
+		pj := priority[items[j].status]
+		if pi != pj {
+			return pi < pj
+		}
+		return items[i].bugID < items[j].bugID
+	})
+	return items
+}
+
+func (m *Model) refreshTaskList() {
+	var listItems []list.Item
+	for _, t := range m.tasks {
+		listItems = append(listItems, taskListItem{task: t})
+	}
+	m.taskList.SetItems(listItems)
+}
+
+func (m *Model) updateLogContent() {
+	var lines []string
+	filter := strings.ToLower(m.filterInput)
+	for _, e := range m.allLog {
+		ts := time.Unix(int64(e.Time), 0).Format("15:04")
+		line := ts + "  " + padRight(e.Agent, 16) + "  " + renderLogMessage(e.Message)
+		if filter == "" || strings.Contains(strings.ToLower(line), filter) {
+			lines = append(lines, line)
+		}
+	}
+	m.logViewport.SetContent(strings.Join(lines, "\n"))
+}
+
+func renderLogMessage(msg string) string {
+	return urlRe.ReplaceAllStringFunc(msg, func(url string) string {
+		return hyperlink(url, "[link]")
+	})
+}
+
+func padRight(s string, n int) string {
+	if len(s) >= n {
+		return s[:n]
+	}
+	return s + strings.Repeat(" ", n-len(s))
+}
+
+func hyperlink(url, label string) string {
+	// OSC 8 hyperlink: \x1b]8;;URL\x1b\\label\x1b]8;;\x1b\\
+	return "\x1b]8;;" + url + "\x1b\\\\" + label + "\x1b]8;;\x1b\\\\"
+}
+
+// statusStyle returns a lipgloss style for the given task status.
+func statusStyle(status string) lipgloss.Style {
+	base := lipgloss.NewStyle().Bold(true).Padding(0, 1)
+	switch status {
+	case "failed":
+		return base.Foreground(lipgloss.Color("196"))
+	case "waiting":
+		return base.Foreground(lipgloss.Color("214"))
+	case "running":
+		return base.Foreground(lipgloss.Color("82"))
+	case "done", "idle":
+		return base.Foreground(lipgloss.Color("240"))
+	default:
+		return base.Foreground(lipgloss.Color("255"))
+	}
+}
