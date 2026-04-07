@@ -96,7 +96,8 @@ func (m Model) renderBTW() string {
 	var parts []string
 	sp := m.spinner.View()
 	for _, e := range m.btw {
-		parts = append(parts, sp+" "+e.Agent+"  "+e.Message)
+		agentLabel := lipgloss.NewStyle().Foreground(agentColor(e.Agent)).Render(e.Agent)
+		parts = append(parts, sp+" "+agentLabel+"  "+e.Message)
 	}
 	line := strings.Join(parts, "  ·  ")
 	const ellipsis = "…"
@@ -123,7 +124,7 @@ func (m Model) renderFooter() string {
 	} else {
 		logLabel = "[LOG]"
 	}
-	return footerStyle.Render(" Tab " + tasksLabel + " " + logLabel + "  ↑↓/jk scroll  g/G top/bot  <> resize  / filter  q quit ")
+	return footerStyle.Render(" Tab " + tasksLabel + " " + logLabel + "  ↑↓/jk scroll  g/G top/bot  [/] split  </>  pane  / filter  q quit ")
 }
 
 func renderOverlay(item taskItem, width, height int, behind string) string {

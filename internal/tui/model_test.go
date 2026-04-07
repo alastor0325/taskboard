@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/exp/teatest"
 
 	"github.com/alastor0325/taskboard/internal/store"
@@ -305,18 +306,18 @@ func TestSplitResizeKeys(t *testing.T) {
 	m2 := updated.(Model)
 	initial := m2.splitRatio
 
-	// ">" increases split ratio
-	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(">")})
+	// "]" increases split ratio
+	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	m3 := updated2.(Model)
 	if m3.splitRatio != initial+5 {
-		t.Errorf("> key: splitRatio got %d, want %d", m3.splitRatio, initial+5)
+		t.Errorf("] key: splitRatio got %d, want %d", m3.splitRatio, initial+5)
 	}
 
-	// "<" decreases split ratio
-	updated3, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("<")})
+	// "[" decreases split ratio
+	updated3, _ := m3.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
 	m4 := updated3.(Model)
 	if m4.splitRatio != initial {
-		t.Errorf("< key: splitRatio got %d, want %d", m4.splitRatio, initial)
+		t.Errorf("[ key: splitRatio got %d, want %d", m4.splitRatio, initial)
 	}
 }
 
@@ -327,7 +328,7 @@ func TestSplitRatioClamped(t *testing.T) {
 
 	// Drive ratio to minimum
 	m2.splitRatio = 20
-	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("<")})
+	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
 	m3 := updated2.(Model)
 	if m3.splitRatio < 20 {
 		t.Errorf("splitRatio should not go below 20, got %d", m3.splitRatio)
@@ -335,11 +336,42 @@ func TestSplitRatioClamped(t *testing.T) {
 
 	// Drive ratio to maximum
 	m2.splitRatio = 80
-	updated3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(">")})
+	updated3, _ := m2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("]")})
 	m4 := updated3.(Model)
 	if m4.splitRatio > 80 {
 		t.Errorf("splitRatio should not exceed 80, got %d", m4.splitRatio)
 	}
+}
+
+func TestAgentColorConsistent(t *testing.T) {
+	// Same name always gets the same color.
+	c1 := agentColor("inv-2025001")
+	c2 := agentColor("inv-2025001")
+	if c1 != c2 {
+		t.Errorf("agentColor not deterministic: %q != %q", c1, c2)
+	}
+}
+
+func TestAgentColorDistinct(t *testing.T) {
+	// Different names should not all collide to the same color (probabilistic).
+	agents := []string{"inv-2025001", "agent-debug", "manager", "inv-2025005", "inv-2025008"}
+	seen := map[lipgloss.Color]bool{}
+	for _, a := range agents {
+		seen[agentColor(a)] = true
+	}
+	if len(seen) < 2 {
+		t.Errorf("all agents got the same color — palette not working")
+	}
+}
+
+func TestAgentColorInPalette(t *testing.T) {
+	c := agentColor("any-agent")
+	for _, p := range agentColorPalette {
+		if c == p {
+			return
+		}
+	}
+	t.Errorf("agentColor returned %q which is not in the palette", c)
 }
 
 func TestFooterNormalMode(t *testing.T) {
@@ -348,7 +380,7 @@ func TestFooterNormalMode(t *testing.T) {
 	m2 := updated.(Model)
 
 	footer := m2.renderFooter()
-	for _, want := range []string{"Tab", "[TASKS]", "↑↓", "jk", "g/G", "<>", "filter", "quit"} {
+	for _, want := range []string{"Tab", "[TASKS]", "↑↓", "jk", "g/G", "</>", "filter", "quit"} {
 		if !strings.Contains(footer, want) {
 			t.Errorf("footer missing %q: %q", want, footer)
 		}

@@ -23,8 +23,9 @@ type taskDelegate struct{}
 
 func newTaskDelegate() taskDelegate { return taskDelegate{} }
 
+// Height is 4: 2 content rows + top border + bottom border.
 func (d taskDelegate) Height() int                             { return 4 }
-func (d taskDelegate) Spacing() int                            { return 1 }
+func (d taskDelegate) Spacing() int                            { return 0 }
 func (d taskDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 var (
@@ -49,10 +50,7 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		return
 	}
 
-	cursor := "  "
-	if index == m.Index() {
-		cursor = "▶ "
-	}
+	selected := index == m.Index()
 
 	badge := statusStyle(t.task.status).Render(statusBadge(t.task.status))
 
@@ -72,46 +70,78 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	if len(links) > 0 {
 		linkStr = "  " + strings.Join(links, " ")
 	}
-	row0 := fmt.Sprintf("%s%-10s  %s  %s%s",
-		cursor,
+	row0 := fmt.Sprintf("%-10s  %s  %s%s",
 		dim.Render(t.task.bugID),
 		badge,
 		dim.Render(t.task.summary),
 		linkStr,
 	)
 
-	row1 := ""
-	if t.task.note != "" {
-		if t.task.status == "waiting" {
-			row1 = "  " + noteWaitingStyle.Render(">> "+t.task.note)
-		} else {
-			row1 = "  " + notePlainStyle.Render(t.task.note)
+	row1 := buildRow1(t.task)
+
+	inner := row0 + "\n" + row1
+	cardWidth := m.Width() - 2 // subtract left+right border chars
+	if cardWidth < 1 {
+		cardWidth = 1
+	}
+	box := cardBorderStyle(t.task.status, selected).Width(cardWidth).Render(inner)
+	fmt.Fprint(w, box)
+}
+
+// buildRow1 returns the secondary info line for a card.
+// Priority: note > worktree+inv > btw heartbeat > empty.
+func buildRow1(t taskItem) string {
+	if t.note != "" {
+		if t.status == "waiting" {
+			return noteWaitingStyle.Render(">> " + t.note)
 		}
+		return notePlainStyle.Render(t.note)
 	}
+	var parts []string
+	if t.worktree != "" {
+		wt := strings.Replace(t.worktree, cachedHomeDir(), "~", 1)
+		parts = append(parts, worktreeStyle.Render(wt))
+	}
+	if t.hasInv {
+		invURL := "https://github.com/alastor0325/firefox-bug-investigation/blob/main/bug-" + t.bugID + "-investigation.md"
+		parts = append(parts, invStyle.Render(hyperlink(invURL, "[inv]")))
+	}
+	if len(parts) > 0 {
+		return strings.Join(parts, "  ")
+	}
+	if t.btwMsg != "" {
+		return btwCardStyle.Render(btwSpinnerChar() + " " + t.btwMsg)
+	}
+	return ""
+}
 
-	row2 := ""
-	var row2Parts []string
-	if t.task.worktree != "" {
-		wt := strings.Replace(t.task.worktree, cachedHomeDir(), "~", 1)
-		row2Parts = append(row2Parts, worktreeStyle.Render(wt))
+// cardBorderStyle returns a border box style for a task card.
+// Border type and color signal priority; selected cards get a bold border.
+func cardBorderStyle(status string, selected bool) lipgloss.Style {
+	var border lipgloss.Border
+	var color lipgloss.Color
+	switch status {
+	case "failed":
+		border = lipgloss.ThickBorder()
+		color = "196"
+	case "waiting":
+		border = lipgloss.NormalBorder()
+		color = "214"
+	case "running":
+		border = lipgloss.NormalBorder()
+		color = "82"
+	case "done":
+		border = lipgloss.NormalBorder()
+		color = "236"
+	default: // idle
+		border = lipgloss.NormalBorder()
+		color = "238"
 	}
-	if t.task.hasInv {
-		invURL := "https://github.com/alastor0325/firefox-bug-investigation/blob/main/bug-" + t.task.bugID + "-investigation.md"
-		row2Parts = append(row2Parts, invStyle.Render(hyperlink(invURL, "[inv]")))
+	s := lipgloss.NewStyle().Border(border).BorderForeground(lipgloss.Color(color))
+	if selected {
+		s = s.Bold(true)
 	}
-	if len(row2Parts) > 0 {
-		row2 = "  " + strings.Join(row2Parts, "  ")
-	}
-
-	row3 := ""
-	if t.task.btwMsg != "" {
-		row3 = "  " + btwCardStyle.Render(btwSpinnerChar()+" "+t.task.btwMsg)
-	}
-
-	fmt.Fprintln(w, row0)
-	fmt.Fprintln(w, row1)
-	fmt.Fprintln(w, row2)
-	fmt.Fprint(w, row3)
+	return s
 }
 
 // statusBadge returns the display label for a task status, matching the Python STATUS_META symbols.

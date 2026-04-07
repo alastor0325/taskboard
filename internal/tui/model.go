@@ -2,7 +2,9 @@ package tui
 
 import (
 	"encoding/json"
+	"hash/fnv"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -209,11 +211,19 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 			m.logViewport.LineUp(1)
 		}
 	case "<":
+		if os.Getenv("TMUX") != "" {
+			exec.Command("tmux", "resize-pane", "-L", "5").Run() //nolint:errcheck
+		}
+	case ">":
+		if os.Getenv("TMUX") != "" {
+			exec.Command("tmux", "resize-pane", "-R", "5").Run() //nolint:errcheck
+		}
+	case "[":
 		if m.splitRatio > 20 {
 			m.splitRatio -= 5
 			m = m.relayout()
 		}
-	case ">":
+	case "]":
 		if m.splitRatio < 80 {
 			m.splitRatio += 5
 			m = m.relayout()
@@ -396,13 +406,27 @@ func (m *Model) refreshTaskList() {
 	m.taskList.SetItems(listItems)
 }
 
+var agentColorPalette = []lipgloss.Color{
+	"75", "208", "141", "43", "204", "185", "39", "120",
+}
+
+// agentColor returns a consistent color for an agent name by hashing it.
+func agentColor(name string) lipgloss.Color {
+	h := fnv.New32a()
+	h.Write([]byte(name))
+	return agentColorPalette[h.Sum32()%uint32(len(agentColorPalette))]
+}
+
 func (m *Model) updateLogContent() {
 	var lines []string
 	filter := strings.ToLower(m.filterInput)
 	for _, e := range m.allLog {
 		ts := time.Unix(int64(e.Time), 0).Format("15:04")
-		line := ts + "  " + padRight(e.Agent, 16) + "  " + renderLogMessage(e.Message)
-		if filter == "" || strings.Contains(strings.ToLower(line), filter) {
+		agentStyled := lipgloss.NewStyle().Foreground(agentColor(e.Agent)).Render(padRight(e.Agent, 16))
+		line := ts + "  " + agentStyled + "  " + renderLogMessage(e.Message)
+		// Strip ANSI for filter matching.
+		plain := ts + "  " + padRight(e.Agent, 16) + "  " + e.Message
+		if filter == "" || strings.Contains(strings.ToLower(plain), filter) {
 			lines = append(lines, line)
 		}
 	}
