@@ -32,28 +32,35 @@ func openTmux(proj string, widthPercent int) error {
 	).Run()
 }
 
-// killTmuxTUIPanes kills all tmux panes whose command is running "taskboard tui".
+// killTmuxTUIPanes kills all tmux panes whose command is "taskboard", skipping the caller's own pane.
 func killTmuxTUIPanes() {
-	// List all panes with format: session:window.pane pane_id current_command
 	out, err := exec.Command("tmux", "list-panes", "-a",
 		"-F", "#{pane_id} #{pane_current_command}").Output()
 	if err != nil {
 		return
 	}
 	myPane := os.Getenv("TMUX_PANE")
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, paneID := range tuiPanesToKill(string(out), myPane) {
+		exec.Command("tmux", "kill-pane", "-t", paneID).Run() //nolint:errcheck
+	}
+}
+
+// tuiPanesToKill parses tmux list-panes output and returns IDs of panes running
+// "taskboard" that are not the caller's own pane (myPane).
+func tuiPanesToKill(output, myPane string) []string {
+	var ids []string
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue
 		}
 		paneID, cmd := fields[0], fields[1]
-		if paneID == myPane {
+		if paneID == myPane || cmd != "taskboard" {
 			continue
 		}
-		if cmd == "taskboard" {
-			exec.Command("tmux", "kill-pane", "-t", paneID).Run() //nolint:errcheck
-		}
+		ids = append(ids, paneID)
 	}
+	return ids
 }
 
 func openZellij(proj string) error {
