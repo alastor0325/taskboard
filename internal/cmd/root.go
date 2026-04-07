@@ -10,8 +10,29 @@ func Execute() error {
 		printUsage()
 		return nil
 	}
-	sub := os.Args[1]
-	args := os.Args[2:]
+
+	// Strip global flags that may appear before the subcommand.
+	// resolveProject() handles these within each handler, so we just need
+	// to find the first non-flag argument to use as the subcommand.
+	allArgs := os.Args[1:]
+	var sub string
+	var args []string
+	for i := 0; i < len(allArgs); i++ {
+		a := allArgs[i]
+		if (a == "--project" || a == "-project") && i+1 < len(allArgs) {
+			// skip flag + value; they're handled by resolveProject in each cmd
+			args = append(args, a, allArgs[i+1])
+			i++
+		} else if sub == "" {
+			sub = a
+		} else {
+			args = append(args, a)
+		}
+	}
+	if sub == "" {
+		printUsage()
+		return nil
+	}
 
 	switch sub {
 	case "init":
