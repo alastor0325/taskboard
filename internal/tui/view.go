@@ -9,14 +9,15 @@ import (
 )
 
 var (
-	borderFocused   = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("62"))
-	borderUnfocused = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
-	headerStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
-	btwStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	overlayStyle    = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62")).
-			Padding(0, 1)
+	borderFocused     = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("62"))
+	borderUnfocused   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
+	headerStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
+	sectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).Underline(true)
+	btwStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	overlayStyle      = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("62")).
+				Padding(0, 1)
 )
 
 func (m Model) View() string {
@@ -54,7 +55,7 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderTasks() string {
-	title := "TASKS"
+	title := sectionTitleStyle.Render("TASKS")
 	content := lipgloss.NewStyle().Height(m.taskList.Height()).Render(m.taskList.View())
 	innerW := m.width - 4 // 2 border chars each side
 	if innerW < 1 {
@@ -67,7 +68,7 @@ func (m Model) renderTasks() string {
 }
 
 func (m Model) renderLog() string {
-	title := "LOG"
+	title := sectionTitleStyle.Render("LOG")
 	if m.filtering {
 		title += "  [/] filter: \"" + m.filterInput + "_\""
 	} else if m.filterInput != "" {

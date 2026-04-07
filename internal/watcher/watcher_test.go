@@ -9,8 +9,8 @@ import (
 
 func TestGetWidthDefault(t *testing.T) {
 	t.Setenv("TASKBOARD_WIDTH", "")
-	if w := getWidth(); w != 35 {
-		t.Errorf("default width: got %d, want 35", w)
+	if w := getWidth(); w != 50 {
+		t.Errorf("default width: got %d, want 50", w)
 	}
 }
 
@@ -23,17 +23,17 @@ func TestGetWidthFromEnv(t *testing.T) {
 
 func TestGetWidthBelowMinReturnsDefault(t *testing.T) {
 	t.Setenv("TASKBOARD_WIDTH", "10")
-	// Values outside [20, 70] are rejected; the function falls back to 35.
-	if w := getWidth(); w != 35 {
-		t.Errorf("value below 20 should fall back to 35, got %d", w)
+	// Values outside [20, 70] are rejected; the function falls back to 50.
+	if w := getWidth(); w != 50 {
+		t.Errorf("value below 20 should fall back to 50, got %d", w)
 	}
 }
 
 func TestGetWidthAboveMaxReturnsDefault(t *testing.T) {
 	t.Setenv("TASKBOARD_WIDTH", "80")
-	// Values outside [20, 70] are rejected; the function falls back to 35.
-	if w := getWidth(); w != 35 {
-		t.Errorf("value above 70 should fall back to 35, got %d", w)
+	// Values outside [20, 70] are rejected; the function falls back to 50.
+	if w := getWidth(); w != 50 {
+		t.Errorf("value above 70 should fall back to 50, got %d", w)
 	}
 }
 

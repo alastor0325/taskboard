@@ -25,7 +25,7 @@ func runTUI(args []string) error {
 
 func runOpen(args []string) error {
 	proj, rest := resolveProject(args)
-	width := 35
+	width := 50
 	for i := 0; i < len(rest); i++ {
 		if rest[i] == "--width" && i+1 < len(rest) {
 			if w, err := strconv.Atoi(rest[i+1]); err == nil {

@@ -18,12 +18,12 @@ import (
 func writeStatusFile(t *testing.T, path string, tasks map[string]map[string]any, log []types.LogEntry, btw []types.BtwEntry) {
 	t.Helper()
 	status := map[string]any{
-		"project":    "test",
-		"updated_at": float64(time.Now().Unix()),
-		"tasks":      tasks,
+		"project":      "test",
+		"updated_at":   float64(time.Now().Unix()),
+		"tasks":        tasks,
 		"build_agents": map[string]any{},
-		"log":        log,
-		"btw":        btw,
+		"log":          log,
+		"btw":          btw,
 	}
 	data, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
@@ -182,6 +182,63 @@ func TestFilterInput(t *testing.T) {
 	}
 	if m3.filterInput != "audio" {
 		t.Errorf("filter input: got %q, want %q", m3.filterInput, "audio")
+	}
+}
+
+func TestBuildAgentMap(t *testing.T) {
+	bugID := int64(2025475)
+	status := types.AgentStatus{
+		BuildAgents: map[string]*store.BuildAgent{
+			"debug": {AgentID: "agent-debug", CurrentBug: &bugID},
+		},
+		InvestigationAgents: map[string]*store.InvestigationAgent{
+			"2025480": {AgentID: "inv-2025480"},
+		},
+	}
+	m := buildAgentMap(status)
+	if m["2025475"] != "agent-debug" {
+		t.Errorf("build agent: got %q, want agent-debug", m["2025475"])
+	}
+	if m["2025480"] != "inv-2025480" {
+		t.Errorf("inv agent: got %q, want inv-2025480", m["2025480"])
+	}
+}
+
+func TestBuildBtwMap(t *testing.T) {
+	entries := []types.BtwEntry{
+		{Agent: "inv-2025475", Message: "tracing call chain"},
+		{Agent: "agent-debug", Message: "building"},
+		{Agent: "inv-2025475", Message: "writing investigation file"}, // last wins
+	}
+	m := buildBtwMap(entries)
+	if m["inv-2025475"].Message != "writing investigation file" {
+		t.Errorf("last btw should win, got %q", m["inv-2025475"].Message)
+	}
+	if m["agent-debug"].Message != "building" {
+		t.Errorf("agent-debug btw: got %q", m["agent-debug"].Message)
+	}
+}
+
+func TestBuildTaskItems_BtwMapping(t *testing.T) {
+	bugID := int64(2025475)
+	status := types.AgentStatus{
+		Tasks: map[string]*store.Task{
+			"2025475": {Summary: "test bug", Status: "running"},
+		},
+		BuildAgents: map[string]*store.BuildAgent{
+			"debug": {AgentID: "agent-debug", CurrentBug: &bugID},
+		},
+		InvestigationAgents: map[string]*store.InvestigationAgent{},
+		Btw: []types.BtwEntry{
+			{Agent: "agent-debug", Message: "compiling dom/media"},
+		},
+	}
+	items := buildTaskItems(status)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].btwMsg != "compiling dom/media" {
+		t.Errorf("btwMsg: got %q, want %q", items[0].btwMsg, "compiling dom/media")
 	}
 }
 

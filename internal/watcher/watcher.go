@@ -66,5 +66,5 @@ func getWidth() int {
 			}
 		}
 	}
-	return 35
+	return 50
 }

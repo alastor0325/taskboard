@@ -3,9 +3,12 @@ package tui
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -43,14 +46,16 @@ type Model struct {
 }
 
 type taskItem struct {
-	bugID   string
-	summary string
-	status  string
-	note    string
-	tryURL  string
-	revURL  string
+	bugID    string
+	summary  string
+	status   string
+	note     string
+	tryURL   string
+	revURL   string
 	worktree string
-	agents  []agentInfo
+	agents   []agentInfo
+	btwMsg   string
+	hasInv   bool
 }
 
 type agentInfo struct {
@@ -80,12 +85,12 @@ func New(proj, statusFile string) Model {
 	vp.MouseWheelDelta = 3
 
 	return Model{
-		proj:       proj,
-		statusFile: statusFile,
-		focus:      focusTasks,
-		taskList:   tl,
+		proj:        proj,
+		statusFile:  statusFile,
+		focus:       focusTasks,
+		taskList:    tl,
 		logViewport: vp,
-		spinner:    sp,
+		spinner:     sp,
 	}
 }
 
@@ -250,7 +255,7 @@ func (m *Model) relayout() Model {
 	if remaining < 4 {
 		remaining = 4
 	}
-	tasksH := remaining * 35 / 100
+	tasksH := remaining * 50 / 100
 	if tasksH < 2 {
 		tasksH = 2
 	}
@@ -294,14 +299,26 @@ func (m *Model) pollStatus() Model {
 }
 
 func buildTaskItems(status types.AgentStatus) []taskItem {
+	agentMap := buildAgentMap(status)
+	btwMap := buildBtwMap(status.Btw)
+
 	var items []taskItem
 	for id, t := range status.Tasks {
+		agentID := agentMap[id]
+		var btwMsg string
+		if agentID != "" {
+			if e, ok := btwMap[agentID]; ok {
+				btwMsg = e.Message
+			}
+		}
 		item := taskItem{
 			bugID:    id,
 			summary:  t.Summary,
 			status:   t.Status,
 			note:     t.Note,
 			worktree: t.Worktree,
+			btwMsg:   btwMsg,
+			hasInv:   invFileExists(id),
 		}
 		items = append(items, item)
 	}
@@ -316,6 +333,47 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 		return items[i].bugID < items[j].bugID
 	})
 	return items
+}
+
+// buildAgentMap returns a map from bugID to agentID by scanning build and investigation agents.
+func buildAgentMap(status types.AgentStatus) map[string]string {
+	m := make(map[string]string)
+	for _, ba := range status.BuildAgents {
+		if ba.CurrentBug != nil {
+			m[strconv.FormatInt(*ba.CurrentBug, 10)] = ba.AgentID
+		}
+	}
+	for bugID, ia := range status.InvestigationAgents {
+		if ia.AgentID != "" {
+			m[bugID] = ia.AgentID
+		}
+	}
+	return m
+}
+
+// buildBtwMap returns a map from agentName to the most recent BtwEntry for that agent.
+func buildBtwMap(entries []types.BtwEntry) map[string]types.BtwEntry {
+	m := make(map[string]types.BtwEntry)
+	for _, e := range entries {
+		m[e.Agent] = e
+	}
+	return m
+}
+
+var cachedHomeDir = sync.OnceValue(func() string {
+	h, _ := os.UserHomeDir()
+	return h
+})
+
+// invFileExists returns true if a firefox-bug-investigation file exists for the given bug ID.
+func invFileExists(bugID string) bool {
+	home := cachedHomeDir()
+	if home == "" {
+		return false
+	}
+	path := filepath.Join(home, "firefox-bug-investigation", "bug-"+bugID+"-investigation.md")
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func (m *Model) refreshTaskList() {

@@ -104,12 +104,13 @@ func writeStatus(proj string, team *store.Team) error {
 	btwEntries, _ := loadBtw(logPath)
 
 	status := types.AgentStatus{
-		Project:     proj,
-		UpdatedAt:   float64(time.Now().Unix()),
-		Tasks:       team.Tasks,
-		BuildAgents: team.BuildAgents,
-		Log:         logEntries,
-		Btw:         btwEntries,
+		Project:             proj,
+		UpdatedAt:           float64(time.Now().Unix()),
+		Tasks:               team.Tasks,
+		BuildAgents:         team.BuildAgents,
+		InvestigationAgents: team.InvestigationAgents,
+		Log:                 logEntries,
+		Btw:                 btwEntries,
 	}
 	return writeJSON(statusFile(proj), status)
 }

@@ -21,8 +21,8 @@ func agentHealth(args []string) error {
 	info, err := os.Stat(outputFile)
 	if os.IsNotExist(err) {
 		return printJSON(map[string]any{
-			"status": "dead",
-			"exists": false,
+			"status":      "dead",
+			"exists":      false,
 			"age_seconds": nil,
 		})
 	}
@@ -56,10 +56,10 @@ func checkBuildProgress(args []string) error {
 	artifact, age, err := newestArtifact(objDir)
 	if err != nil || artifact == "" {
 		return printJSON(map[string]any{
-			"status":               "no_artifacts",
-			"has_compiler":         hasCompiler,
+			"status":                    "no_artifacts",
+			"has_compiler":              hasCompiler,
 			"last_artifact_age_seconds": nil,
-			"last_artifact":        nil,
+			"last_artifact":             nil,
 		})
 	}
 
@@ -68,10 +68,10 @@ func checkBuildProgress(args []string) error {
 		status = "stalled"
 	}
 	return printJSON(map[string]any{
-		"status":               status,
-		"has_compiler":         hasCompiler,
+		"status":                    status,
+		"has_compiler":              hasCompiler,
 		"last_artifact_age_seconds": age,
-		"last_artifact":        artifact,
+		"last_artifact":             artifact,
 	})
 }
 
