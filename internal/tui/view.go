@@ -201,30 +201,110 @@ func (m Model) renderFooter() string {
 	return footerStyle.Render(" Tab " + tasksLabel + " " + logLabel + "  ↑↓/jk scroll  g/G top/bot  [/] split  ,/.  pane  / filter  q quit ")
 }
 
+var (
+	overlayLabelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	overlaySepStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	overlayValueStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+	overlayDimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	overlayAgentStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
+	overlayFileStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
+)
+
+func overlaySection(title string, w int) string {
+	bar := strings.Repeat("─", max(0, w-2-len(title)-1))
+	return overlaySepStyle.Render("─ "+title+" "+bar)
+}
+
+func overlayRow(label, value string) string {
+	return overlayLabelStyle.Render(fmt.Sprintf("  %-12s", label)) + overlayValueStyle.Render(value)
+}
+
 func renderOverlay(item taskItem, width, height int, behind string) string {
-	w := min(60, width-4)
+	w := min(68, width-4)
+	inner := w - 2 // available width inside border padding
+
 	var lines []string
+
+	// Header
 	lines = append(lines,
-		fmt.Sprintf("  bug-%s    %s", item.bugID, statusStyle(item.status).Render(strings.ToUpper(item.status))),
+		fmt.Sprintf("  %s   %s",
+			overlayValueStyle.Bold(true).Render("bug-"+item.bugID),
+			statusStyle(item.status).Render(strings.ToUpper(item.status)),
+		),
 		"",
-		"  "+item.summary,
+		"  "+overlayDimStyle.Render(item.summary),
 		"",
 	)
+
+	// Agents section
+	hasAgents := item.invAgentID != "" || item.buildAgentName != ""
+	if hasAgents {
+		lines = append(lines, overlaySection("Agents", inner))
+		if item.invAgentID != "" {
+			invLine := overlayAgentStyle.Render(item.invAgentID)
+			if item.invAgentStatus != "" {
+				invLine += overlayDimStyle.Render("  "+item.invAgentStatus)
+			}
+			if item.invBuildType != "" {
+				invLine += overlayDimStyle.Render("  "+item.invBuildType+" build")
+			}
+			lines = append(lines, overlayLabelStyle.Render("  investigation  ")+invLine)
+		}
+		if item.buildAgentName != "" {
+			buildLine := overlayAgentStyle.Render(item.buildAgentName)
+			buildLine += overlayDimStyle.Render("  "+item.buildAgentStatus)
+			if item.buildQueuePos == 0 {
+				buildLine += overlayDimStyle.Render("  (building now)")
+			} else if item.buildQueuePos > 0 {
+				buildLine += overlayDimStyle.Render(fmt.Sprintf("  (queued #%d)", item.buildQueuePos))
+			}
+			lines = append(lines, overlayLabelStyle.Render("  build          ")+buildLine)
+		}
+		lines = append(lines, "")
+	}
+
+	// BTW heartbeat
+	if item.btwMsg != "" {
+		lines = append(lines, overlaySection("Live", inner))
+		lines = append(lines, "  "+btwCardStyle.Render(btwSpinnerChar()+" "+item.btwMsg), "")
+	}
+
+	// Claimed files
+	if len(item.claimedFiles) > 0 {
+		lines = append(lines, overlaySection("Files", inner))
+		for _, f := range item.claimedFiles {
+			lines = append(lines, "  "+overlayFileStyle.Render(f))
+		}
+		lines = append(lines, "")
+	}
+
+	// Note
 	if item.note != "" {
-		lines = append(lines, "  note:      "+item.note, "")
+		lines = append(lines, overlaySection("Note", inner))
+		lines = append(lines, "  "+overlayValueStyle.Render(item.note), "")
+	}
+
+	// Links
+	lines = append(lines, overlaySection("Links", inner))
+	bugURL := "https://bugzilla.mozilla.org/show_bug.cgi?id=" + item.bugID
+	lines = append(lines, overlayRow("bug", hyperlink(bugURL, "[bugzilla "+item.bugID+"]")))
+	if item.hasInv {
+		invURL := "https://github.com/alastor0325/firefox-bug-investigation/blob/main/bug-" + item.bugID + "-investigation.md"
+		lines = append(lines, overlayRow("investigation", hyperlink(invURL, "[github]")))
 	}
 	if item.worktree != "" {
-		lines = append(lines, "  worktree:  "+item.worktree)
+		wt := strings.Replace(item.worktree, cachedHomeDir(), "~", 1)
+		lines = append(lines, overlayRow("worktree", overlayDimStyle.Render(wt)))
 	}
 	if item.tryURL != "" {
-		lines = append(lines, "  try:       "+hyperlink(item.tryURL, "[treeherder]"))
+		lines = append(lines, overlayRow("try", hyperlink(item.tryURL, "[treeherder]")))
 	}
 	if item.revURL != "" {
-		lines = append(lines, "  review:    "+hyperlink(item.revURL, "[review]"))
+		lines = append(lines, overlayRow("review", hyperlink(item.revURL, "[review server]")))
 	}
-	bugURL := "https://bugzilla.mozilla.org/show_bug.cgi?id=" + item.bugID
-	lines = append(lines, "  bug:       "+hyperlink(bugURL, "[bugzilla "+item.bugID+"]"))
-	lines = append(lines, "", "                         [ESC] close")
+
+	// Footer
+	lines = append(lines, "", overlayDimStyle.Render("  Press ESC to close"))
 
 	box := overlayStyle.Width(w).Render(strings.Join(lines, "\n"))
 

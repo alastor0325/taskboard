@@ -21,6 +21,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/alastor0325/taskboard/internal/store"
 	"github.com/alastor0325/taskboard/internal/types"
 )
 
@@ -51,22 +52,25 @@ type Model struct {
 }
 
 type taskItem struct {
-	bugID    string
-	summary  string
-	status   string
-	note     string
-	tryURL   string
-	revURL   string
-	worktree string
-	agents   []agentInfo
-	btwMsg   string
-	hasInv   bool
-	doneAt   float64 // unix timestamp, non-zero only when status=="done"
-}
-
-type agentInfo struct {
-	name   string
-	status string
+	bugID          string
+	summary        string
+	status         string
+	note           string
+	tryURL         string
+	revURL         string
+	worktree       string
+	btwMsg         string
+	hasInv         bool
+	doneAt         float64 // unix timestamp, non-zero only when status=="done"
+	// investigation agent
+	invAgentID     string
+	invAgentStatus string
+	invBuildType   string
+	claimedFiles   []string
+	// build agent
+	buildAgentName   string
+	buildAgentStatus string
+	buildQueuePos    int // -1=not in queue, 0=current build, N=position in queue
 }
 
 type taskDetail struct {
@@ -325,18 +329,49 @@ func (m *Model) pollStatus() Model {
 }
 
 func buildTaskItems(status types.AgentStatus) []taskItem {
-	agentMap := buildAgentMap(status)
 	btwMap := buildBtwMap(status.Btw)
+
+	// Index investigation agents and build agents by bugID.
+	invByBug := make(map[string]*store.InvestigationAgent)
+	for bugID, ia := range status.InvestigationAgents {
+		invByBug[bugID] = ia
+	}
+	type buildPos struct {
+		name    string
+		agentID string
+		status  string
+		pos     int // 0=current, N=queue position
+	}
+	buildByBug := make(map[string]buildPos)
+	for agentName, ba := range status.BuildAgents {
+		if ba.CurrentBug != nil {
+			bugID := strconv.FormatInt(*ba.CurrentBug, 10)
+			buildByBug[bugID] = buildPos{name: agentName, agentID: ba.AgentID, status: ba.Status, pos: 0}
+		}
+		for i, qid := range ba.Queue {
+			bugID := strconv.FormatInt(qid, 10)
+			if _, already := buildByBug[bugID]; !already {
+				buildByBug[bugID] = buildPos{name: agentName, agentID: ba.AgentID, status: ba.Status, pos: i + 1}
+			}
+		}
+	}
 
 	var items []taskItem
 	for id, t := range status.Tasks {
-		agentID := agentMap[id]
 		var btwMsg string
-		if agentID != "" {
-			if e, ok := btwMap[agentID]; ok {
+		if inv, ok := invByBug[id]; ok && inv.AgentID != "" {
+			if e, ok := btwMap[inv.AgentID]; ok {
 				btwMsg = e.Message
 			}
 		}
+		if btwMsg == "" {
+			if bp, ok := buildByBug[id]; ok {
+				if e, ok := btwMap[bp.agentID]; ok {
+					btwMsg = e.Message
+				}
+			}
+		}
+
 		var revURL string
 		if t.Worktree != "" && worktreeHasPatches(t.Worktree) {
 			revURL = reviewURL(t.Worktree)
@@ -345,6 +380,7 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 		if t.DoneAt != nil {
 			doneAt = *t.DoneAt
 		}
+
 		item := taskItem{
 			bugID:    id,
 			summary:  t.Summary,
@@ -355,6 +391,18 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 			btwMsg:   btwMsg,
 			hasInv:   invFileExists(id),
 			doneAt:   doneAt,
+			buildQueuePos: -1,
+		}
+		if inv, ok := invByBug[id]; ok {
+			item.invAgentID = inv.AgentID
+			item.invAgentStatus = inv.Status
+			item.invBuildType = inv.BuildType
+			item.claimedFiles = inv.ClaimedFiles
+		}
+		if bp, ok := buildByBug[id]; ok {
+			item.buildAgentName = bp.name
+			item.buildAgentStatus = bp.status
+			item.buildQueuePos = bp.pos
 		}
 		items = append(items, item)
 	}
@@ -371,21 +419,6 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 	return items
 }
 
-// buildAgentMap returns a map from bugID to agentID by scanning build and investigation agents.
-func buildAgentMap(status types.AgentStatus) map[string]string {
-	m := make(map[string]string)
-	for _, ba := range status.BuildAgents {
-		if ba.CurrentBug != nil {
-			m[strconv.FormatInt(*ba.CurrentBug, 10)] = ba.AgentID
-		}
-	}
-	for bugID, ia := range status.InvestigationAgents {
-		if ia.AgentID != "" {
-			m[bugID] = ia.AgentID
-		}
-	}
-	return m
-}
 
 // buildBtwMap returns a map from agentName to the most recent BtwEntry for that agent.
 func buildBtwMap(entries []types.BtwEntry) map[string]types.BtwEntry {

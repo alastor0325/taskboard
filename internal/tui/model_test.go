@@ -186,22 +186,36 @@ func TestFilterInput(t *testing.T) {
 	}
 }
 
-func TestBuildAgentMap(t *testing.T) {
+func TestBuildTaskItemsAgentResolution(t *testing.T) {
 	bugID := int64(2025475)
 	status := types.AgentStatus{
+		Tasks: map[string]*store.Task{
+			"2025475": {Summary: "test bug", Status: "running"},
+			"2025480": {Summary: "inv bug", Status: "waiting"},
+		},
 		BuildAgents: map[string]*store.BuildAgent{
-			"debug": {AgentID: "agent-debug", CurrentBug: &bugID},
+			"agent-debug": {AgentID: "agent-debug", CurrentBug: &bugID},
 		},
 		InvestigationAgents: map[string]*store.InvestigationAgent{
-			"2025480": {AgentID: "inv-2025480"},
+			"2025480": {AgentID: "inv-2025480", BuildType: "asan"},
 		},
 	}
-	m := buildAgentMap(status)
-	if m["2025475"] != "agent-debug" {
-		t.Errorf("build agent: got %q, want agent-debug", m["2025475"])
+	items := buildTaskItems(status)
+	byID := make(map[string]taskItem)
+	for _, it := range items {
+		byID[it.bugID] = it
 	}
-	if m["2025480"] != "inv-2025480" {
-		t.Errorf("inv agent: got %q, want inv-2025480", m["2025480"])
+	if byID["2025475"].buildAgentName != "agent-debug" {
+		t.Errorf("build agent: got %q, want agent-debug", byID["2025475"].buildAgentName)
+	}
+	if byID["2025475"].buildQueuePos != 0 {
+		t.Errorf("build queue pos: got %d, want 0", byID["2025475"].buildQueuePos)
+	}
+	if byID["2025480"].invAgentID != "inv-2025480" {
+		t.Errorf("inv agent: got %q, want inv-2025480", byID["2025480"].invAgentID)
+	}
+	if byID["2025480"].invBuildType != "asan" {
+		t.Errorf("inv build type: got %q, want asan", byID["2025480"].invBuildType)
 	}
 }
 
