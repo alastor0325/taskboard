@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStatusBadge(t *testing.T) {
@@ -106,6 +107,31 @@ func TestStatusBadgeUnknown(t *testing.T) {
 	got := statusBadge("unknown")
 	if got != "UNKNOWN" {
 		t.Errorf("statusBadge(%q) = %q, want %q", "unknown", got, "UNKNOWN")
+	}
+}
+
+func TestBuildRow1DoneCountdown(t *testing.T) {
+	// doneAt set, still within TTL → shows countdown
+	doneAt := float64(time.Now().Unix() - 10) // 10s ago → ~290s left
+	task := taskItem{status: "done", doneAt: doneAt}
+	row := buildRow1(task)
+	if !strings.Contains(row, "removing in") {
+		t.Errorf("expected countdown, got %q", row)
+	}
+
+	// doneAt past TTL → shows "removing soon"
+	oldDoneAt := float64(time.Now().Unix() - 400)
+	task2 := taskItem{status: "done", doneAt: oldDoneAt}
+	row2 := buildRow1(task2)
+	if !strings.Contains(row2, "removing soon") {
+		t.Errorf("expected 'removing soon', got %q", row2)
+	}
+
+	// done without doneAt → no countdown (falls through to note/empty)
+	task3 := taskItem{status: "done", doneAt: 0}
+	row3 := buildRow1(task3)
+	if strings.Contains(row3, "removing") {
+		t.Errorf("no doneAt set, should not show countdown, got %q", row3)
 	}
 }
 

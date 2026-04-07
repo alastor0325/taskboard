@@ -526,3 +526,105 @@ func TestTeatestTabFocus(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 }
+
+func TestReviewURL(t *testing.T) {
+	cases := []struct {
+		worktree string
+		wantFrag string
+	}{
+		{"~/firefox-2026875", "2026875"},
+		{"/home/user/firefox-myfeature", "myfeature"},
+		{"/home/user/firefox-", ""},
+		{"/home/user/somedir", "somedir"}, // no firefox- prefix: use basename as-is
+	}
+	for _, c := range cases {
+		url := reviewURL(c.worktree)
+		if !strings.Contains(url, "#"+c.wantFrag) {
+			t.Errorf("reviewURL(%q) = %q, want fragment %q", c.worktree, url, c.wantFrag)
+		}
+		if !strings.HasPrefix(url, "http://localhost:") {
+			t.Errorf("reviewURL(%q) = %q, want http://localhost: prefix", c.worktree, url)
+		}
+	}
+}
+
+func TestBuildTaskItemsQueuePosition(t *testing.T) {
+	currentBug := int64(2025001)
+	status := types.AgentStatus{
+		Tasks: map[string]*store.Task{
+			"2025001": {Status: "running"},
+			"2025002": {Status: "waiting"},
+			"2025003": {Status: "waiting"},
+		},
+		BuildAgents: map[string]*store.BuildAgent{
+			"agent-debug": {
+				AgentID:    "agent-debug",
+				Status:     "busy",
+				CurrentBug: &currentBug,
+				Queue:      []int64{2025002, 2025003},
+			},
+		},
+	}
+	items := buildTaskItems(status)
+	byID := make(map[string]taskItem)
+	for _, it := range items {
+		byID[it.bugID] = it
+	}
+	if byID["2025001"].buildQueuePos != 0 {
+		t.Errorf("current bug should have pos 0, got %d", byID["2025001"].buildQueuePos)
+	}
+	if byID["2025002"].buildQueuePos != 1 {
+		t.Errorf("first queued bug should have pos 1, got %d", byID["2025002"].buildQueuePos)
+	}
+	if byID["2025003"].buildQueuePos != 2 {
+		t.Errorf("second queued bug should have pos 2, got %d", byID["2025003"].buildQueuePos)
+	}
+}
+
+func TestBuildTaskItemsClaimedFiles(t *testing.T) {
+	status := types.AgentStatus{
+		Tasks: map[string]*store.Task{
+			"2025475": {Status: "running"},
+		},
+		InvestigationAgents: map[string]*store.InvestigationAgent{
+			"2025475": {
+				AgentID:      "inv-2025475",
+				BuildType:    "asan",
+				ClaimedFiles: []string{"dom/media/ipc/RemoteCDMChild.cpp", "dom/media/ipc/RemoteCDMChild.h"},
+			},
+		},
+	}
+	items := buildTaskItems(status)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	it := items[0]
+	if it.invBuildType != "asan" {
+		t.Errorf("invBuildType: got %q, want asan", it.invBuildType)
+	}
+	if len(it.claimedFiles) != 2 {
+		t.Errorf("claimedFiles: got %v, want 2 entries", it.claimedFiles)
+	}
+	if it.claimedFiles[0] != "dom/media/ipc/RemoteCDMChild.cpp" {
+		t.Errorf("claimedFiles[0]: got %q", it.claimedFiles[0])
+	}
+}
+
+func TestRefreshTaskListPreservesCursor(t *testing.T) {
+	m, sf := newTestModel(t)
+	writeStatusFile(t, sf, map[string]map[string]any{
+		"2025001": {"status": "running", "summary": "A"},
+		"2025002": {"status": "running", "summary": "B"},
+		"2025003": {"status": "running", "summary": "C"},
+	}, nil, nil)
+	m = m.pollStatus()
+	m.taskList.Select(2)
+	if m.taskList.Index() != 2 {
+		t.Fatalf("pre-condition: cursor should be 2, got %d", m.taskList.Index())
+	}
+	// refreshTaskList should preserve cursor at 2
+	m.refreshTaskList()
+	if m.taskList.Index() != 2 {
+		t.Errorf("cursor reset after refresh: got %d, want 2", m.taskList.Index())
+	}
+}

@@ -263,3 +263,15 @@ func TestBadSubcommand(t *testing.T) {
 		t.Fatal("bad subcommand should return a non-nil error")
 	}
 }
+
+func TestSetTaskRejectsDashPrefix(t *testing.T) {
+	setupProject(t)
+	err := runArgs(t, "set-task", "--help")
+	if err == nil {
+		t.Fatal("set-task --help should return an error (-- prefix rejected)")
+	}
+	err2 := runArgs(t, "set-task", "-flag")
+	if err2 == nil {
+		t.Fatal("set-task -flag should return an error (- prefix rejected)")
+	}
+}
