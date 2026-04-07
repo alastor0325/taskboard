@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/alastor0325/taskboard/internal/store"
 )
@@ -35,6 +36,9 @@ func runSetTask(args []string) error {
 		return fmt.Errorf("usage: taskboard set-task <bug_id> [--summary S] [--status S] [--note N] [--worktree W]")
 	}
 	bugID := rest[0]
+	if strings.HasPrefix(bugID, "-") {
+		return fmt.Errorf("invalid bug_id %q: must not start with '-'", bugID)
+	}
 	opts := store.SetTaskOpts{}
 	for i := 1; i < len(rest); i++ {
 		switch rest[i] {
