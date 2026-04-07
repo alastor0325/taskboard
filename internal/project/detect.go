@@ -11,17 +11,17 @@ import (
 
 // Detect returns the active project name using the priority order:
 // 1. explicit argument (pass "" to skip)
-// 2. FIREFOX_MANAGER_PROJECT env var
+// 2. TASKBOARD_PROJECT env var
 // 3. tmux session name
 // 4. Zellij session name
-// 5. ~/.firefox-manager/ directory scan
+// 5. ~/.taskboard/ directory scan
 // 6. CWD basename if it starts with "firefox-"
 // 7. random session-{hex} fallback
 func Detect(explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	if v := os.Getenv("FIREFOX_MANAGER_PROJECT"); v != "" {
+	if v := os.Getenv("TASKBOARD_PROJECT"); v != "" {
 		return v
 	}
 	if name := tmuxSession(); name != "" {
@@ -52,7 +52,7 @@ func Sanitize(name string) string {
 
 // TeamFile returns the path to team.json for the given project.
 func TeamFile(project string) string {
-	return filepath.Join(os.Getenv("HOME"), ".firefox-manager", project, "team.json")
+	return filepath.Join(os.Getenv("HOME"), ".taskboard", project, "team.json")
 }
 
 // StatusFile returns the path to agent-status.json, honouring the
@@ -61,7 +61,7 @@ func StatusFile(project string) string {
 	if v := os.Getenv("AGENT_STATUS_FILE"); v != "" {
 		return v
 	}
-	return filepath.Join(os.Getenv("HOME"), ".firefox-manager", project, "agent-status.json")
+	return filepath.Join(os.Getenv("HOME"), ".taskboard", project, "agent-status.json")
 }
 
 func tmuxSession() string {
@@ -73,7 +73,7 @@ func tmuxSession() string {
 }
 
 func firefoxManagerScan() string {
-	dir := filepath.Join(os.Getenv("HOME"), ".firefox-manager")
+	dir := filepath.Join(os.Getenv("HOME"), ".taskboard")
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) != 1 {
 		return ""

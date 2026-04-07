@@ -34,5 +34,5 @@ func statusFile(proj string) string {
 
 // logFile returns the log file path for the given project.
 func logFile(proj string) string {
-	return os.ExpandEnv("$HOME/.firefox-manager/" + proj + "/log.json")
+	return os.ExpandEnv("$HOME/.taskboard/" + proj + "/log.json")
 }

@@ -15,7 +15,7 @@ func TestDetectExplicit(t *testing.T) {
 }
 
 func TestDetectEnvVar(t *testing.T) {
-	t.Setenv("FIREFOX_MANAGER_PROJECT", "env-project")
+	t.Setenv("TASKBOARD_PROJECT", "env-project")
 	t.Setenv("ZELLIJ_SESSION_NAME", "")
 	got := Detect("")
 	if got != "env-project" {
@@ -24,7 +24,7 @@ func TestDetectEnvVar(t *testing.T) {
 }
 
 func TestDetectZellij(t *testing.T) {
-	t.Setenv("FIREFOX_MANAGER_PROJECT", "")
+	t.Setenv("TASKBOARD_PROJECT", "")
 	t.Setenv("ZELLIJ_SESSION_NAME", "zellij-session")
 	// tmuxSession() will fail (no tmux) — expected
 	got := Detect("")
@@ -36,17 +36,17 @@ func TestDetectZellij(t *testing.T) {
 }
 
 func TestDetectZellijPriority(t *testing.T) {
-	// If FIREFOX_MANAGER_PROJECT is set, it takes priority over ZELLIJ
-	t.Setenv("FIREFOX_MANAGER_PROJECT", "env-wins")
+	// If TASKBOARD_PROJECT is set, it takes priority over ZELLIJ
+	t.Setenv("TASKBOARD_PROJECT", "env-wins")
 	t.Setenv("ZELLIJ_SESSION_NAME", "zellij-session")
 	got := Detect("")
 	if got != "env-wins" {
-		t.Errorf("FIREFOX_MANAGER_PROJECT should win, got %q", got)
+		t.Errorf("TASKBOARD_PROJECT should win, got %q", got)
 	}
 }
 
 func TestDetectExplicitPriority(t *testing.T) {
-	t.Setenv("FIREFOX_MANAGER_PROJECT", "env-project")
+	t.Setenv("TASKBOARD_PROJECT", "env-project")
 	got := Detect("explicit-wins")
 	if got != "explicit-wins" {
 		t.Errorf("explicit should win, got %q", got)
@@ -54,7 +54,7 @@ func TestDetectExplicitPriority(t *testing.T) {
 }
 
 func TestDetectRandom(t *testing.T) {
-	t.Setenv("FIREFOX_MANAGER_PROJECT", "")
+	t.Setenv("TASKBOARD_PROJECT", "")
 	t.Setenv("ZELLIJ_SESSION_NAME", "")
 	t.Setenv("TMUX", "") // prevent tmux detection
 	// Use a temp HOME so firefoxManagerScan finds nothing
@@ -99,7 +99,7 @@ func TestSanitize(t *testing.T) {
 func TestTeamFile(t *testing.T) {
 	t.Setenv("HOME", "/home/testuser")
 	got := TeamFile("myproj")
-	want := "/home/testuser/.firefox-manager/myproj/team.json"
+	want := "/home/testuser/.taskboard/myproj/team.json"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -109,7 +109,7 @@ func TestStatusFileDefault(t *testing.T) {
 	t.Setenv("AGENT_STATUS_FILE", "")
 	t.Setenv("HOME", "/home/testuser")
 	got := StatusFile("myproj")
-	want := "/home/testuser/.firefox-manager/myproj/agent-status.json"
+	want := "/home/testuser/.taskboard/myproj/agent-status.json"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
@@ -134,14 +134,14 @@ func TestFirefoxManagerScan(t *testing.T) {
 	}
 
 	// One directory entry → return its name
-	os.MkdirAll(filepath.Join(tmpHome, ".firefox-manager", "my-session"), 0o755)
+	os.MkdirAll(filepath.Join(tmpHome, ".taskboard", "my-session"), 0o755)
 	got = firefoxManagerScan()
 	if got != "my-session" {
 		t.Errorf("single dir: got %q, want my-session", got)
 	}
 
 	// Two entries → ""
-	os.MkdirAll(filepath.Join(tmpHome, ".firefox-manager", "another-session"), 0o755)
+	os.MkdirAll(filepath.Join(tmpHome, ".taskboard", "another-session"), 0o755)
 	got = firefoxManagerScan()
 	if got != "" {
 		t.Errorf("two dirs: got %q, want empty", got)
