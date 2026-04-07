@@ -84,6 +84,7 @@ func New(proj, statusFile string) Model {
 	tl.SetShowStatusBar(false)
 	tl.SetShowTitle(false)
 	tl.SetFilteringEnabled(false)
+	tl.SetShowPagination(false)
 
 	vp := viewport.New(0, 0)
 	vp.MouseWheelEnabled = true
