@@ -459,11 +459,13 @@ func invFileExists(bugID string) bool {
 }
 
 func (m *Model) refreshTaskList() {
+	prevIdx := m.taskList.Index()
 	var listItems []list.Item
 	for _, t := range m.tasks {
 		listItems = append(listItems, taskListItem{task: t})
 	}
 	m.taskList.SetItems(listItems)
+	m.taskList.Select(prevIdx) // SetItems resets cursor; restore it
 }
 
 var agentColorPalette = []lipgloss.Color{
