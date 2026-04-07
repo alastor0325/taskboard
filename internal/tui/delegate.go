@@ -9,6 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/alastor0325/taskboard/internal/store"
 )
 
 type taskListItem struct {
@@ -28,12 +30,13 @@ func (d taskDelegate) Spacing() int                            { return 0 }
 func (d taskDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 var (
-	noteWaitingStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
-	notePlainStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	worktreeStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	invStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Faint(true)
-	btwCardStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
-	dimStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	noteWaitingStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	notePlainStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	worktreeStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	invStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Faint(true)
+	btwCardStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
+	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	doneExpiryStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Italic(true)
 )
 
 // isBugID returns true if the task name is a numeric Bugzilla bug ID.
@@ -140,9 +143,15 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 }
 
 // buildRow1 returns the secondary info line for a card.
-// Priority: note > worktree > btw heartbeat > empty.
-// [inv] and [bug] links are always shown in row0, not here.
+// Priority: done-expiry hint > note > worktree > btw heartbeat > empty.
 func buildRow1(t taskItem) string {
+	if t.status == "done" && t.doneAt > 0 {
+		secsLeft := int(store.DONE_TASK_TTL.Seconds()) - int(time.Now().Unix()-int64(t.doneAt))
+		if secsLeft < 0 {
+			secsLeft = 0
+		}
+		return doneExpiryStyle.Render(fmt.Sprintf("removing in %ds", secsLeft))
+	}
 	if t.note != "" {
 		if t.status == "waiting" {
 			return noteWaitingStyle.Render(">> " + t.note)

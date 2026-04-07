@@ -61,6 +61,7 @@ type taskItem struct {
 	agents   []agentInfo
 	btwMsg   string
 	hasInv   bool
+	doneAt   float64 // unix timestamp, non-zero only when status=="done"
 }
 
 type agentInfo struct {
@@ -340,6 +341,10 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 		if t.Worktree != "" && worktreeHasPatches(t.Worktree) {
 			revURL = reviewURL(t.Worktree)
 		}
+		var doneAt float64
+		if t.DoneAt != nil {
+			doneAt = *t.DoneAt
+		}
 		item := taskItem{
 			bugID:    id,
 			summary:  t.Summary,
@@ -349,6 +354,7 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 			revURL:   revURL,
 			btwMsg:   btwMsg,
 			hasInv:   invFileExists(id),
+			doneAt:   doneAt,
 		}
 		items = append(items, item)
 	}

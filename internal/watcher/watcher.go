@@ -12,6 +12,7 @@ import (
 	"github.com/alastor0325/taskboard/internal/launcher"
 	"github.com/alastor0325/taskboard/internal/project"
 	"github.com/alastor0325/taskboard/internal/selfexec"
+	"github.com/alastor0325/taskboard/internal/store"
 )
 
 const pollInterval = time.Second
@@ -28,10 +29,14 @@ func Run(proj string) error {
 	teamFile := project.TeamFile(proj)
 	var lastMtime time.Time
 
+	st := store.New(project.TeamFile(proj))
 	for {
 		info, err := os.Stat(teamFile)
 		if err == nil && info.ModTime().After(lastMtime) {
 			lastMtime = info.ModTime()
+			exec.Command(selfexec.Path(), "sync", "--project", proj).Run()
+		}
+		if removed, _ := st.CleanupDone(store.DONE_TASK_TTL); removed {
 			exec.Command(selfexec.Path(), "sync", "--project", proj).Run()
 		}
 		checkRelaunchMarker(proj, safe)
