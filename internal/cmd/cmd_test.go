@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alastor0325/taskboard/internal/store"
 	"github.com/alastor0325/taskboard/internal/types"
 )
 
@@ -39,7 +40,7 @@ func setupProject(t *testing.T) (statusFile, proj string) {
 	statusFile = filepath.Join(dir, "agent-status.json")
 	proj = "test-proj-" + filepath.Base(dir)
 	t.Setenv("AGENT_STATUS_FILE", statusFile)
-	t.Setenv("FIREFOX_MANAGER_PROJECT", proj)
+	t.Setenv("TASKBOARD_PROJECT", proj)
 	// Also redirect the team.json and log.json under the same tmpdir so we
 	// don't touch the real ~/.firefox-manager directory.
 	t.Setenv("HOME", dir)
@@ -202,10 +203,29 @@ func TestLogCommand(t *testing.T) {
 }
 
 func TestBtwCommand(t *testing.T) {
+	_, proj := setupProject(t)
+
+	// Register a build agent in team.json so btw can validate it.
+	st := newStore(proj)
+	team, _ := st.Load()
+	agentName := "agent-debug"
+	team.BuildAgents[agentName] = &store.BuildAgent{AgentID: "agent-debug", Status: "idle"}
+	st.Save(team)
+
+	if err := runArgs(t, "btw", agentName, "tick"); err != nil {
+		t.Fatalf("btw returned error: %v", err)
+	}
+}
+
+func TestBtwRejectsUnknownAgent(t *testing.T) {
 	_, _ = setupProject(t)
 
-	if err := runArgs(t, "btw", "agent-1", "tick"); err != nil {
-		t.Fatalf("btw returned error: %v", err)
+	err := runArgs(t, "btw", "phantom-agent", "some message")
+	if err == nil {
+		t.Fatal("btw with unknown agent should return an error")
+	}
+	if !strings.Contains(err.Error(), "unknown agent") {
+		t.Errorf("expected 'unknown agent' error, got: %v", err)
 	}
 }
 

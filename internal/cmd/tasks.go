@@ -155,7 +155,15 @@ func runBtw(args []string) error {
 	if len(rest) < 2 {
 		return fmt.Errorf("usage: taskboard btw <agent> <message>")
 	}
-	if err := appendBtw(logFile(proj), rest[0], rest[1]); err != nil {
+	agentName := rest[0]
+	known, err := newStore(proj).IsKnownAgent(agentName)
+	if err != nil {
+		return err
+	}
+	if !known {
+		return fmt.Errorf("unknown agent %q: not registered in team.json", agentName)
+	}
+	if err := appendBtw(logFile(proj), agentName, rest[1]); err != nil {
 		return err
 	}
 	return syncStatus(proj)

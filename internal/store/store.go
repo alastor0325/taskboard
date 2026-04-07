@@ -311,6 +311,34 @@ func (s *TaskStore) syncAgentStatus(team *Team, bugID, status string) {
 	}
 }
 
+// IsKnownAgent returns true if agentName matches any registered agent in team.json:
+// an investigation agent_id, build agent map key, task agent agent_name, or utility agent agent_id.
+func (s *TaskStore) IsKnownAgent(agentName string) (bool, error) {
+	team, err := s.Load()
+	if err != nil {
+		return false, err
+	}
+	for _, ia := range team.InvestigationAgents {
+		if ia.AgentID == agentName {
+			return true, nil
+		}
+	}
+	if _, ok := team.BuildAgents[agentName]; ok {
+		return true, nil
+	}
+	for _, ta := range team.TaskAgents {
+		if ta.AgentName == agentName {
+			return true, nil
+		}
+	}
+	for _, ua := range team.UtilityAgents {
+		if ua.AgentID == agentName {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func emptyTeam() *Team {
 	return &Team{
 		Tasks:               map[string]*Task{},
