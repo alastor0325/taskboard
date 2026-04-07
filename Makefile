@@ -9,6 +9,7 @@ build:
 install: build
 	mkdir -p $(INSTALL_DIR)
 	cp $(BINARY) $(INSTALL_DIR)/$(BINARY)
+	codesign --sign - $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true
 
 test:
 	go test ./...
