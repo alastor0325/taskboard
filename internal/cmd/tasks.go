@@ -161,7 +161,16 @@ func runBtw(args []string) error {
 	if len(rest) < 2 {
 		return fmt.Errorf("usage: taskboard btw <agent> <message>")
 	}
-	return appendBtw(logFile(proj), rest[0], rest[1])
+	if err := appendBtw(logFile(proj), rest[0], rest[1]); err != nil {
+		return err
+	}
+	// Sync agent-status.json so the TUI picks up the new BTW entry immediately.
+	st := newStore(proj)
+	team, err := st.Load()
+	if err != nil {
+		return err
+	}
+	return writeStatus(proj, team)
 }
 
 func runNotify(args []string) error {

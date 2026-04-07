@@ -59,6 +59,8 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		dim = dimStyle
 	}
 
+	// Build link set: [try] [rev] always [bug]; [inv] if investigation file exists.
+	bugURL := "https://bugzilla.mozilla.org/show_bug.cgi?id=" + t.task.bugID
 	var links []string
 	if t.task.tryURL != "" {
 		links = append(links, hyperlink(t.task.tryURL, "[try]"))
@@ -66,10 +68,13 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	if t.task.revURL != "" {
 		links = append(links, hyperlink(t.task.revURL, "[rev]"))
 	}
-	linkStr := ""
-	if len(links) > 0 {
-		linkStr = "  " + strings.Join(links, " ")
+	links = append(links, hyperlink(bugURL, "[bug]"))
+	if t.task.hasInv {
+		invURL := "https://github.com/alastor0325/firefox-bug-investigation/blob/main/bug-" + t.task.bugID + "-investigation.md"
+		links = append(links, invStyle.Render(hyperlink(invURL, "[inv]")))
 	}
+	linkStr := "  " + strings.Join(links, " ")
+
 	row0 := fmt.Sprintf("%-10s  %s  %s%s",
 		dim.Render(t.task.bugID),
 		badge,
@@ -78,28 +83,29 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 	)
 	row1 := buildRow1(t.task)
 
+	cardWidth := m.Width() - 2
+	if cardWidth < 1 {
+		cardWidth = 1
+	}
+
 	if selected {
-		// Full bordered box for the focused card.
-		inner := row0 + "\n" + row1
-		cardWidth := m.Width() - 2
-		if cardWidth < 1 {
-			cardWidth = 1
-		}
+		// Truncate rows so the border box never wraps and corrupts the fixed height.
+		inner := ansiTrimRight(row0, cardWidth) + "\n" + ansiTrimRight(row1, cardWidth)
 		box := cardBorderStyle(t.task.status).Width(cardWidth).Render(inner)
 		fmt.Fprint(w, box)
 	} else {
 		// Colored left-accent bar for unselected cards.
 		accent := lipgloss.NewStyle().Foreground(statusAccentColor(t.task.status)).Render("▌ ")
-		// 4 lines: accent+row0, indent+row1, blank, blank (last line no newline)
-		fmt.Fprintln(w, accent+row0)
-		fmt.Fprintln(w, "  "+row1)
+		fmt.Fprintln(w, accent+ansiTrimRight(row0, m.Width()-2))
+		fmt.Fprintln(w, "  "+ansiTrimRight(row1, m.Width()-2))
 		fmt.Fprintln(w, "")
 		fmt.Fprint(w, "")
 	}
 }
 
 // buildRow1 returns the secondary info line for a card.
-// Priority: note > worktree+inv > btw heartbeat > empty.
+// Priority: note > worktree > btw heartbeat > empty.
+// [inv] and [bug] links are always shown in row0, not here.
 func buildRow1(t taskItem) string {
 	if t.note != "" {
 		if t.status == "waiting" {
@@ -107,17 +113,9 @@ func buildRow1(t taskItem) string {
 		}
 		return notePlainStyle.Render(t.note)
 	}
-	var parts []string
 	if t.worktree != "" {
 		wt := strings.Replace(t.worktree, cachedHomeDir(), "~", 1)
-		parts = append(parts, worktreeStyle.Render(wt))
-	}
-	if t.hasInv {
-		invURL := "https://github.com/alastor0325/firefox-bug-investigation/blob/main/bug-" + t.bugID + "-investigation.md"
-		parts = append(parts, invStyle.Render(hyperlink(invURL, "[inv]")))
-	}
-	if len(parts) > 0 {
-		return strings.Join(parts, "  ")
+		return worktreeStyle.Render(wt)
 	}
 	if t.btwMsg != "" {
 		return btwCardStyle.Render(btwSpinnerChar() + " " + t.btwMsg)

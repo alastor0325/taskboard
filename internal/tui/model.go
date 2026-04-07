@@ -80,8 +80,8 @@ func New(proj, statusFile string) Model {
 	tl := list.New([]list.Item{}, delegate, 0, 0)
 	tl.SetShowHelp(false)
 	tl.SetShowStatusBar(false)
+	tl.SetShowTitle(false)
 	tl.SetFilteringEnabled(false)
-	tl.Title = ""
 
 	vp := viewport.New(0, 0)
 	vp.MouseWheelEnabled = true
