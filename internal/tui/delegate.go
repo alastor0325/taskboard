@@ -23,7 +23,7 @@ type taskDelegate struct{}
 
 func newTaskDelegate() taskDelegate { return taskDelegate{} }
 
-// Height is 4: 2 content rows + top border + bottom border.
+// Height is 4: top-border/accent + 2 content rows + bottom-border/padding.
 func (d taskDelegate) Height() int                             { return 4 }
 func (d taskDelegate) Spacing() int                            { return 0 }
 func (d taskDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
@@ -76,16 +76,26 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		dim.Render(t.task.summary),
 		linkStr,
 	)
-
 	row1 := buildRow1(t.task)
 
-	inner := row0 + "\n" + row1
-	cardWidth := m.Width() - 2 // subtract left+right border chars
-	if cardWidth < 1 {
-		cardWidth = 1
+	if selected {
+		// Full bordered box for the focused card.
+		inner := row0 + "\n" + row1
+		cardWidth := m.Width() - 2
+		if cardWidth < 1 {
+			cardWidth = 1
+		}
+		box := cardBorderStyle(t.task.status).Width(cardWidth).Render(inner)
+		fmt.Fprint(w, box)
+	} else {
+		// Colored left-accent bar for unselected cards.
+		accent := lipgloss.NewStyle().Foreground(statusAccentColor(t.task.status)).Render("▌ ")
+		// 4 lines: accent+row0, indent+row1, blank, blank (last line no newline)
+		fmt.Fprintln(w, accent+row0)
+		fmt.Fprintln(w, "  "+row1)
+		fmt.Fprintln(w, "")
+		fmt.Fprint(w, "")
 	}
-	box := cardBorderStyle(t.task.status, selected).Width(cardWidth).Render(inner)
-	fmt.Fprint(w, box)
 }
 
 // buildRow1 returns the secondary info line for a card.
@@ -115,36 +125,44 @@ func buildRow1(t taskItem) string {
 	return ""
 }
 
-// cardBorderStyle returns a border box style for a task card.
-// Border type and color signal priority; selected cards get a bold border.
-func cardBorderStyle(status string, selected bool) lipgloss.Style {
-	var border lipgloss.Border
+// cardBorderStyle returns a colored border box for the selected task card.
+func cardBorderStyle(status string) lipgloss.Style {
 	var color lipgloss.Color
 	switch status {
 	case "failed":
-		border = lipgloss.ThickBorder()
 		color = "196"
 	case "waiting":
-		border = lipgloss.NormalBorder()
 		color = "214"
 	case "running":
-		border = lipgloss.NormalBorder()
 		color = "82"
 	case "done":
-		border = lipgloss.NormalBorder()
 		color = "236"
 	default: // idle
-		border = lipgloss.NormalBorder()
 		color = "238"
 	}
-	s := lipgloss.NewStyle().Border(border).BorderForeground(lipgloss.Color(color))
-	if selected {
-		s = s.Bold(true)
-	}
-	return s
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color(color)).
+		Bold(true)
 }
 
-// statusBadge returns the display label for a task status, matching the Python STATUS_META symbols.
+// statusAccentColor returns the left-accent bar color for an unselected card.
+func statusAccentColor(status string) lipgloss.Color {
+	switch status {
+	case "failed":
+		return "196"
+	case "waiting":
+		return "214"
+	case "running":
+		return "82"
+	case "done":
+		return "236"
+	default:
+		return "238"
+	}
+}
+
+// statusBadge returns the display label for a task status.
 func statusBadge(status string) string {
 	switch status {
 	case "running":

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/alastor0325/taskboard/internal/types"
 )
 
 var (
@@ -13,6 +15,7 @@ var (
 	borderUnfocused   = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("240"))
 	headerStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("62"))
 	sectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).Underline(true)
+	countStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	btwStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	footerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	footerFilterStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
@@ -59,7 +62,8 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderTasks() string {
-	title := sectionTitleStyle.Render("TASKS")
+	n := len(m.taskList.Items())
+	title := sectionTitleStyle.Render("TASKS") + countStyle.Render(fmt.Sprintf("  (%d)", n))
 	content := lipgloss.NewStyle().Height(m.taskList.Height()).Render(m.taskList.View())
 	innerW := m.width - 4 // 2 border chars each side
 	if innerW < 1 {
@@ -72,7 +76,8 @@ func (m Model) renderTasks() string {
 }
 
 func (m Model) renderLog() string {
-	title := sectionTitleStyle.Render("LOG")
+	n := len(m.allLog)
+	title := sectionTitleStyle.Render("LOG") + countStyle.Render(fmt.Sprintf("  (%d)", n))
 	if m.filtering {
 		title += "  [/] filter: \"" + m.filterInput + "_\""
 	} else if m.filterInput != "" {
@@ -89,30 +94,91 @@ func (m Model) renderLog() string {
 	return borderUnfocused.Width(innerW).Render(title + "\n" + content)
 }
 
+// btwSegment is a styled piece of the BTW ticker line.
+type btwSegment struct {
+	text  string
+	color lipgloss.Color // empty = use btwStyle
+}
+
 func (m Model) renderBTW() string {
-	if len(m.btw) == 0 {
+	// Filter entries older than 120 s.
+	now := time.Now()
+	active := filterBtw(m.btw, now)
+	if len(active) == 0 {
 		return btwStyle.Render("─")
 	}
-	var parts []string
-	sp := m.spinner.View()
-	for _, e := range m.btw {
-		agentLabel := lipgloss.NewStyle().Foreground(agentColor(e.Agent)).Render(e.Agent)
-		parts = append(parts, sp+" "+agentLabel+"  "+e.Message)
-	}
-	line := strings.Join(parts, "  ·  ")
-	const ellipsis = "…"
-	if visibleWidth(line) > m.width-1 {
-		for visibleWidth(line)+lipgloss.Width(ellipsis) > m.width-1 && len(line) > 0 {
-			runes := []rune(line)
-			line = string(runes[:len(runes)-1])
+
+	sp := btwSpinnerChar()
+	sep := "  ·  "
+
+	// Build segments and a parallel plain-text string for scroll-offset calculation.
+	var segments []btwSegment
+	var plainParts []string
+	for i, e := range active {
+		if i > 0 {
+			segments = append(segments, btwSegment{text: sep})
 		}
-		line += ellipsis
+		segments = append(segments,
+			btwSegment{text: sp + " "},
+			btwSegment{text: e.Agent, color: agentColor(e.Agent)},
+			btwSegment{text: "  " + e.Message},
+		)
+		plainParts = append(plainParts, sp+" "+e.Agent+"  "+e.Message)
 	}
-	return btwStyle.Render(line)
+	plainCycle := strings.Join(plainParts, sep) + sep
+	cycleLen := len([]rune(plainCycle))
+	if cycleLen < 1 {
+		cycleLen = 1
+	}
+
+	// Scroll offset: one visible char per 80 ms.
+	offset := int(now.UnixMilli()/80) % cycleLen
+
+	// Build visible output by consuming segments, skipping the first `offset` visible chars.
+	var b strings.Builder
+	remaining := offset
+	doubled := append(segments, btwSegment{text: sep})
+	doubled = append(doubled, segments...) // wrap-around copy
+	for _, seg := range doubled {
+		runes := []rune(seg.text)
+		if remaining >= len(runes) {
+			remaining -= len(runes)
+			continue
+		}
+		// This segment is partially consumed.
+		text := string(runes[remaining:])
+		remaining = 0
+		if seg.color != "" {
+			b.WriteString(lipgloss.NewStyle().Foreground(seg.color).Render(text))
+		} else {
+			b.WriteString(btwStyle.Render(text))
+		}
+	}
+
+	line := b.String()
+	maxW := m.width - 1
+	if maxW < 1 {
+		maxW = 1
+	}
+	if visibleWidth(line) > maxW {
+		line = ansiTrimRight(line, maxW)
+	}
+	return line
+}
+
+// filterBtw returns BTW entries not older than 120 seconds.
+func filterBtw(entries []types.BtwEntry, now time.Time) []types.BtwEntry {
+	var out []types.BtwEntry
+	for _, e := range entries {
+		if now.Unix()-int64(e.Time) <= 120 {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // renderFooter returns the keybinding help bar. In filter mode it shows the
-// current filter input and available actions; otherwise it shows all bindings.
+// current filter input and available actions; otherwise it shows all key bindings.
 func (m Model) renderFooter() string {
 	if m.filtering {
 		return footerFilterStyle.Render(" / " + m.filterInput + "   Enter confirm  Esc clear ")
@@ -124,7 +190,7 @@ func (m Model) renderFooter() string {
 	} else {
 		logLabel = "[LOG]"
 	}
-	return footerStyle.Render(" Tab " + tasksLabel + " " + logLabel + "  ↑↓/jk scroll  g/G top/bot  [/] split  </>  pane  / filter  q quit ")
+	return footerStyle.Render(" Tab " + tasksLabel + " " + logLabel + "  ↑↓/jk scroll  g/G top/bot  [/] split  ,/.  pane  / filter  q quit ")
 }
 
 func renderOverlay(item taskItem, width, height int, behind string) string {
@@ -157,41 +223,40 @@ func renderOverlay(item taskItem, width, height int, behind string) string {
 	// Centre the box over the behind content.
 	boxLines := strings.Split(box, "\n")
 	bgLines := strings.Split(behind, "\n")
+
+	// Pad bgLines to full terminal height so startY indexing never misses.
+	for len(bgLines) < height {
+		bgLines = append(bgLines, "")
+	}
+
 	startY := (height - len(boxLines)) / 2
-	startX := (width - w - 4) / 2
+	startX := (width - lipgloss.Width(box)) / 2
+	if startX < 0 {
+		startX = 0
+	}
 
 	for i, bl := range boxLines {
 		row := startY + i
 		if row < 0 || row >= len(bgLines) {
 			continue
 		}
-		bg := bgLines[row]
-		bgLines[row] = overlayLine(bg, bl, startX, width)
+		bgLines[row] = overlayLine(bgLines[row], bl, startX)
 	}
 	return strings.Join(bgLines, "\n")
 }
 
-func overlayLine(bg, overlay string, x, maxW int) string {
+// overlayLine replaces bg content starting at visible position x with overlay.
+// Uses ANSI-aware trimming so existing escape sequences don't corrupt the offset.
+func overlayLine(bg, overlay string, x int) string {
 	if x < 0 {
 		x = 0
 	}
-	bgRunes := []rune(bg)
-	ovRunes := []rune(overlay)
-	// Pad bg if needed.
-	for len(bgRunes) < x {
-		bgRunes = append(bgRunes, ' ')
+	prefix := ansiTrimRight(bg, x)
+	prefixW := visibleWidth(prefix)
+	if prefixW < x {
+		prefix += strings.Repeat(" ", x-prefixW)
 	}
-	result := make([]rune, len(bgRunes))
-	copy(result, bgRunes)
-	for i, r := range ovRunes {
-		pos := x + i
-		if pos >= len(result) {
-			result = append(result, r)
-		} else {
-			result[pos] = r
-		}
-	}
-	return string(result)
+	return prefix + overlay
 }
 
 func visibleWidth(s string) int {

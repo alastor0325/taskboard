@@ -30,10 +30,27 @@ func TestStatusBadge(t *testing.T) {
 }
 
 func TestCardBorderStyleColors(t *testing.T) {
-	tests := []struct {
-		status    string
-		wantColor string
-	}{
+	statuses := []string{"failed", "waiting", "running", "done", "idle"}
+	for _, status := range statuses {
+		t.Run(status, func(t *testing.T) {
+			s := cardBorderStyle(status)
+			rendered := s.Width(20).Render("test")
+			if rendered == "" {
+				t.Errorf("cardBorderStyle(%q) rendered empty string", status)
+			}
+		})
+	}
+}
+
+func TestCardBorderStyleIsBold(t *testing.T) {
+	s := cardBorderStyle("running")
+	if !s.GetBold() {
+		t.Error("cardBorderStyle should always be bold (selected indicator)")
+	}
+}
+
+func TestStatusAccentColor(t *testing.T) {
+	tests := []struct{ status, want string }{
 		{"failed", "196"},
 		{"waiting", "214"},
 		{"running", "82"},
@@ -42,22 +59,11 @@ func TestCardBorderStyleColors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.status, func(t *testing.T) {
-			s := cardBorderStyle(tc.status, false)
-			// Render something to ensure no panic; color is verified by palette constants.
-			rendered := s.Width(20).Render("test")
-			if rendered == "" {
-				t.Errorf("cardBorderStyle(%q) rendered empty string", tc.status)
+			got := statusAccentColor(tc.status)
+			if string(got) != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
-	}
-}
-
-func TestCardBorderStyleSelected(t *testing.T) {
-	normal := cardBorderStyle("running", false)
-	selected := cardBorderStyle("running", true)
-	// Selected applies Bold; the styles should differ.
-	if normal.GetBold() == selected.GetBold() {
-		t.Error("selected card border should have Bold=true, normal should not")
 	}
 }
 

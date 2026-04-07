@@ -380,7 +380,7 @@ func TestFooterNormalMode(t *testing.T) {
 	m2 := updated.(Model)
 
 	footer := m2.renderFooter()
-	for _, want := range []string{"Tab", "[TASKS]", "↑↓", "jk", "g/G", "</>", "filter", "quit"} {
+	for _, want := range []string{"Tab", "[TASKS]", "↑↓", "jk", "g/G", ",/.", "filter", "quit"} {
 		if !strings.Contains(footer, want) {
 			t.Errorf("footer missing %q: %q", want, footer)
 		}
@@ -442,6 +442,57 @@ func TestViewContainsFooter(t *testing.T) {
 	view := m2.View()
 	if !strings.Contains(view, "quit") {
 		t.Errorf("View() should contain footer with 'quit': %q", view[:min(200, len(view))])
+	}
+	_ = sf
+}
+
+func TestFilterBtwTTL(t *testing.T) {
+	now := time.Now()
+	entries := []types.BtwEntry{
+		{Time: float64(now.Unix() - 60), Agent: "inv-1", Message: "recent"},
+		{Time: float64(now.Unix() - 200), Agent: "inv-2", Message: "expired"},
+		{Time: float64(now.Unix() - 10), Agent: "inv-3", Message: "very recent"},
+	}
+	got := filterBtw(entries, now)
+	if len(got) != 2 {
+		t.Fatalf("filterBtw: got %d entries, want 2", len(got))
+	}
+	for _, e := range got {
+		if e.Agent == "inv-2" {
+			t.Error("expired entry should be filtered out")
+		}
+	}
+}
+
+func TestViewTaskCount(t *testing.T) {
+	m, sf := newTestModel(t)
+	m.lastMtime = time.Time{}
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+	m2 = m2.pollStatus()
+
+	view := m2.View()
+	if !strings.Contains(view, "TASKS") {
+		t.Error("View() should contain TASKS")
+	}
+	// Should show count like "(2)" since newTestModel sets 2 tasks.
+	if !strings.Contains(view, "(2)") {
+		t.Errorf("View() should show task count (2), got: %q", view[:min(300, len(view))])
+	}
+	_ = sf
+}
+
+func TestViewLogCount(t *testing.T) {
+	m, sf := newTestModel(t)
+	m.lastMtime = time.Time{}
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+	m2 = m2.pollStatus()
+
+	view := m2.View()
+	// newTestModel has 2 log entries.
+	if !strings.Contains(view, "(2)") {
+		t.Errorf("View() should show log count, got: %q", view[:min(300, len(view))])
 	}
 	_ = sf
 }

@@ -77,7 +77,7 @@ func New(proj, statusFile string) Model {
 	sp.Spinner = spinner.Dot
 
 	delegate := newTaskDelegate()
-	tl := list.New(nil, delegate, 0, 0)
+	tl := list.New([]list.Item{}, delegate, 0, 0)
 	tl.SetShowHelp(false)
 	tl.SetShowStatusBar(false)
 	tl.SetFilteringEnabled(false)
@@ -210,11 +210,11 @@ func (m Model) handleKey(msg tea.KeyMsg, cmds []tea.Cmd) (tea.Model, tea.Cmd) {
 		} else {
 			m.logViewport.LineUp(1)
 		}
-	case "<":
+	case ",", "<":
 		if os.Getenv("TMUX") != "" {
 			exec.Command("tmux", "resize-pane", "-L", "5").Run() //nolint:errcheck
 		}
-	case ">":
+	case ".", ">":
 		if os.Getenv("TMUX") != "" {
 			exec.Command("tmux", "resize-pane", "-R", "5").Run() //nolint:errcheck
 		}
