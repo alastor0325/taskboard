@@ -100,8 +100,12 @@ type btwSegment struct {
 	color lipgloss.Color // empty = use btwStyle
 }
 
+const (
+	btwTTLSeconds      = 120
+	btwScrollMsPerChar = 80
+)
+
 func (m Model) renderBTW() string {
-	// Filter entries older than 120 s.
 	now := time.Now()
 	active := filterBtw(m.btw, now)
 	if len(active) == 0 {
@@ -131,8 +135,7 @@ func (m Model) renderBTW() string {
 		cycleLen = 1
 	}
 
-	// Scroll offset: one visible char per 80 ms.
-	offset := int(now.UnixMilli()/80) % cycleLen
+	offset := int(now.UnixMilli()/btwScrollMsPerChar) % cycleLen
 
 	// Build visible output by consuming segments, skipping the first `offset` visible chars.
 	var b strings.Builder
@@ -166,11 +169,10 @@ func (m Model) renderBTW() string {
 	return line
 }
 
-// filterBtw returns BTW entries not older than 120 seconds.
 func filterBtw(entries []types.BtwEntry, now time.Time) []types.BtwEntry {
 	var out []types.BtwEntry
 	for _, e := range entries {
-		if now.Unix()-int64(e.Time) <= 120 {
+		if now.Unix()-int64(e.Time) <= btwTTLSeconds {
 			out = append(out, e)
 		}
 	}

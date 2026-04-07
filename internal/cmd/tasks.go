@@ -7,28 +7,26 @@ import (
 	"github.com/alastor0325/taskboard/internal/store"
 )
 
-func runInit(args []string) error {
-	proj, _ := resolveProject(args)
-	writeLogResetMarker(proj)
-	st := newStore(proj)
-	team, err := st.Load()
+func syncStatus(proj string) error {
+	team, err := newStore(proj).Load()
 	if err != nil {
-		return err
-	}
-	if err := appendLog(logFile(proj), "manager", "session started"); err != nil {
 		return err
 	}
 	return writeStatus(proj, team)
 }
 
-func runSync(args []string) error {
+func runInit(args []string) error {
 	proj, _ := resolveProject(args)
-	st := newStore(proj)
-	team, err := st.Load()
-	if err != nil {
+	writeLogResetMarker(proj)
+	if err := appendLog(logFile(proj), "manager", "session started"); err != nil {
 		return err
 	}
-	return writeStatus(proj, team)
+	return syncStatus(proj)
+}
+
+func runSync(args []string) error {
+	proj, _ := resolveProject(args)
+	return syncStatus(proj)
 }
 
 func runSetTask(args []string) error {
@@ -72,12 +70,10 @@ func runSetTask(args []string) error {
 			return fmt.Errorf("unknown flag %q", rest[i])
 		}
 	}
-	st := newStore(proj)
-	team, err := st.SetTask(bugID, opts)
-	if err != nil {
+	if _, err := newStore(proj).SetTask(bugID, opts); err != nil {
 		return err
 	}
-	return writeStatus(proj, team)
+	return syncStatus(proj)
 }
 
 func runDoneTask(args []string) error {
@@ -85,12 +81,10 @@ func runDoneTask(args []string) error {
 	if len(rest) < 1 {
 		return fmt.Errorf("usage: taskboard done-task <bug_id>")
 	}
-	st := newStore(proj)
-	team, err := st.MarkDone(rest[0])
-	if err != nil {
+	if _, err := newStore(proj).MarkDone(rest[0]); err != nil {
 		return err
 	}
-	return writeStatus(proj, team)
+	return syncStatus(proj)
 }
 
 func runClaimTask(args []string) error {
@@ -149,11 +143,7 @@ func runLog(args []string) error {
 	if err := appendLog(logFile(proj), rest[0], rest[1]); err != nil {
 		return err
 	}
-	team, err := newStore(proj).Load()
-	if err != nil {
-		return err
-	}
-	return writeStatus(proj, team)
+	return syncStatus(proj)
 }
 
 func runBtw(args []string) error {
@@ -164,13 +154,7 @@ func runBtw(args []string) error {
 	if err := appendBtw(logFile(proj), rest[0], rest[1]); err != nil {
 		return err
 	}
-	// Sync agent-status.json so the TUI picks up the new BTW entry immediately.
-	st := newStore(proj)
-	team, err := st.Load()
-	if err != nil {
-		return err
-	}
-	return writeStatus(proj, team)
+	return syncStatus(proj)
 }
 
 func runNotify(args []string) error {
@@ -183,11 +167,7 @@ func runNotify(args []string) error {
 		return err
 	}
 	exec.Command("matrix-cli", "notify", level, message).Run()
-	team, err := newStore(proj).Load()
-	if err != nil {
-		return err
-	}
-	return writeStatus(proj, team)
+	return syncStatus(proj)
 }
 
 func runAgentHealth(args []string) error {

@@ -49,7 +49,7 @@ func TestCardBorderStyleIsBold(t *testing.T) {
 	}
 }
 
-func TestStatusAccentColor(t *testing.T) {
+func TestStatusColor(t *testing.T) {
 	tests := []struct{ status, want string }{
 		{"failed", "196"},
 		{"waiting", "214"},
@@ -59,7 +59,7 @@ func TestStatusAccentColor(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.status, func(t *testing.T) {
-			got := statusAccentColor(tc.status)
+			got := statusColor(tc.status)
 			if string(got) != tc.want {
 				t.Errorf("got %q, want %q", got, tc.want)
 			}

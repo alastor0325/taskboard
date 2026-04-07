@@ -451,19 +451,18 @@ func hyperlink(url, label string) string {
 	return "\x1b]8;;" + url + "\x1b\\" + label + "\x1b]8;;\x1b\\"
 }
 
+var (
+	statusStyleBase    = lipgloss.NewStyle().Bold(true).Padding(0, 1)
+	statusStyleDefault = statusStyleBase.Foreground(lipgloss.Color("255"))
+	statusStyleDim     = statusStyleBase.Foreground(lipgloss.Color("240"))
+)
+
 // statusStyle returns a lipgloss style for the given task status.
 func statusStyle(status string) lipgloss.Style {
-	base := lipgloss.NewStyle().Bold(true).Padding(0, 1)
 	switch status {
-	case "failed":
-		return base.Foreground(lipgloss.Color("196"))
-	case "waiting":
-		return base.Foreground(lipgloss.Color("214"))
-	case "running":
-		return base.Foreground(lipgloss.Color("82"))
 	case "done", "idle":
-		return base.Foreground(lipgloss.Color("240"))
+		return statusStyleDim
 	default:
-		return base.Foreground(lipgloss.Color("255"))
+		return statusStyleBase.Foreground(statusColor(status))
 	}
 }

@@ -23,7 +23,6 @@ type taskDelegate struct{}
 
 func newTaskDelegate() taskDelegate { return taskDelegate{} }
 
-// Height is 4: top-border/accent + 2 content rows + bottom-border/padding.
 func (d taskDelegate) Height() int                             { return 4 }
 func (d taskDelegate) Spacing() int                            { return 0 }
 func (d taskDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
@@ -37,10 +36,28 @@ var (
 	dimStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
+// statusColor returns the display color for a task status.
+func statusColor(status string) lipgloss.Color {
+	switch status {
+	case "failed":
+		return "196"
+	case "waiting":
+		return "214"
+	case "running":
+		return "82"
+	case "done":
+		return "236"
+	default: // idle
+		return "238"
+	}
+}
+
+const spinnerFrameMs = 120
+
 var btwSpinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
 
 func btwSpinnerChar() string {
-	frame := (time.Now().UnixMilli() / 120) % int64(len(btwSpinnerFrames))
+	frame := (time.Now().UnixMilli() / spinnerFrameMs) % int64(len(btwSpinnerFrames))
 	return btwSpinnerFrames[frame]
 }
 
@@ -95,7 +112,7 @@ func (d taskDelegate) Render(w io.Writer, m list.Model, index int, item list.Ite
 		fmt.Fprint(w, box)
 	} else {
 		// Colored left-accent bar for unselected cards.
-		accent := lipgloss.NewStyle().Foreground(statusAccentColor(t.task.status)).Render("▌ ")
+		accent := lipgloss.NewStyle().Foreground(statusColor(t.task.status)).Render("▌ ")
 		fmt.Fprintln(w, accent+ansiTrimRight(row0, m.Width()-2))
 		fmt.Fprintln(w, "  "+ansiTrimRight(row1, m.Width()-2))
 		fmt.Fprintln(w, "")
@@ -125,39 +142,10 @@ func buildRow1(t taskItem) string {
 
 // cardBorderStyle returns a colored border box for the selected task card.
 func cardBorderStyle(status string) lipgloss.Style {
-	var color lipgloss.Color
-	switch status {
-	case "failed":
-		color = "196"
-	case "waiting":
-		color = "214"
-	case "running":
-		color = "82"
-	case "done":
-		color = "236"
-	default: // idle
-		color = "238"
-	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color(color)).
+		BorderForeground(statusColor(status)).
 		Bold(true)
-}
-
-// statusAccentColor returns the left-accent bar color for an unselected card.
-func statusAccentColor(status string) lipgloss.Color {
-	switch status {
-	case "failed":
-		return "196"
-	case "waiting":
-		return "214"
-	case "running":
-		return "82"
-	case "done":
-		return "236"
-	default:
-		return "238"
-	}
 }
 
 // statusBadge returns the display label for a task status.
