@@ -1,6 +1,8 @@
 # taskboard
 
-CLI task board for multi-agent Firefox bug work. Replaces the Python scripts in `~/.claude/skills/firefox-manager/`.
+A CLI tool and terminal dashboard for coordinating multi-agent Firefox bug work.
+It tracks tasks, agents, file ownership, and build progress across parallel
+Claude sessions, with a live Bubble Tea TUI for at-a-glance status.
 
 ## Install
 
