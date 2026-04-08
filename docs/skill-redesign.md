@@ -160,150 +160,399 @@ must call `taskboard sync` explicitly after writing these.
 
 ---
 
-## 4. Improvement Plan
+## 4. Implementation Plan
 
-### Phase 0 — Add "Task Lifecycle" section to skill.md
+Phases 1–3 are binary changes (Go). Phase 4 is the skill rewrite. Phases 1–3 can
+be done in parallel; Phase 4 depends on all three.
 
-Insert section 3 content (slots, field rules, state machine, log/btw/event table)
-into `skill.md` after "TUI Dashboard", before "Team Registry Format". This becomes
-the authoritative reference all three agent prompts cite.
+---
 
-### Phase 1 — Binary: implement `taskboard event`
+### Phase 1 — Binary: skill bundling + `taskboard init` install
+
+**Goal:** The skill ships inside the binary. `taskboard init` always installs the
+latest skill to `~/.claude/skills/taskboard/skill.md`. One repo, one `make install`,
+everything in sync.
+
+#### 1.1 Move skill into the repo
 
 ```
-taskboard event <type> <agent> "<message>"
+taskboard/
+  skills/
+    taskboard.md    ← canonical skill source (moved from ~/.claude/skills/taskboard/)
 ```
 
-1. Validate agent is registered (same check as `btw`) — unregistered → error
-2. `appendLog` always
-3. `syncStatus` always
-4. `matrix-cli notify {level}` conditionally per type table in 3.5
+The `~/.claude/skills/` repo no longer owns this file. Installed copies are treated
+as generated artifacts.
 
-Deliverables:
-- `internal/cmd/tasks.go`: `runEvent`
-- `internal/cmd/root.go`: register subcommand
-- Tests: `TestEventCommand`, `TestEventRejectsUnknownAgent`, `TestEventMatrixAlert`,
-  `TestEventMatrixLog`, `TestEventNoMatrix`
+#### 1.2 Embed in binary
 
-### Phase 2 — Binary: `taskboard detect` + `syncAgentStatus` fix
+In `internal/cmd/skill.go` (new file):
+```go
+import _ "embed"
 
-**`taskboard detect`**: prints `project.Detect("")`. One-liner.
+//go:embed ../../skills/taskboard.md
+var skillContent []byte
 
-**`syncAgentStatus` fix**: currently only updates `InvestigationAgents` and
-`TaskAgents`. Add scan of `BuildAgents` where `current_bug == bugID` and sync
-its `Status` field.
-
-Deliverables:
-- `internal/cmd/root.go`: `detect` subcommand
-- `internal/store/store.go`: fix `syncAgentStatus`
-- Tests: `TestDetectCommand`, `TestSyncAgentStatusUpdatesBuildAgent`
-
-### Phase 3 — Skill: seven targeted edits
-
-**Edit 1 — Add "Task Lifecycle" section** (Phase 0 content)
-
-**Edit 2 — Fix team.json schema**: add `"tasks"` as first key with full example entry.
-
-**Edit 3 — Fix initialization Step 0**: replace shell script with `PROJECT=$(taskboard detect)`.
-
-**Edit 4 — Fix manager investigation spawn**:
+func installSkill() error {
+    dest := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "taskboard", "skill.md")
+    if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+        return err
+    }
+    return os.WriteFile(dest, skillContent, 0o644)
+}
 ```
-1. Check team.json — skip if already running/waiting
-2. Write investigation_agents.X to team.json (BEFORE spawning)
-3. taskboard sync
-4. taskboard set-task X --summary "Bug X — investigating" --status running --note "Starting investigation"
+
+#### 1.3 Call from `taskboard init`
+
+In `runInit` (`internal/cmd/tasks.go`), add before the existing log/sync calls:
+```go
+if err := installSkill(); err != nil {
+    return fmt.Errorf("install skill: %w", err)
+}
+```
+
+`taskboard init` is called at every manager session start — the skill is always
+up to date after that.
+
+#### 1.4 Update Makefile
+
+```makefile
+install: build
+    mkdir -p $(INSTALL_DIR)
+    cp $(BINARY) $(INSTALL_DIR)/$(BINARY)
+    codesign --sign - $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true
+    $(INSTALL_DIR)/$(BINARY) init --project _install  # installs skill as side effect
+```
+
+Or simpler — add a dedicated `install-skill` target that `install` depends on:
+```makefile
+install-skill: build
+    $(INSTALL_DIR)/$(BINARY) install-skill
+
+install: build install-skill
+    ...
+```
+
+#### 1.5 Deliverables
+
+| File | Change |
+|---|---|
+| `skills/taskboard.md` | New — canonical skill source (initially a copy of current skill) |
+| `internal/cmd/skill.go` | New — `installSkill()` + `runInstallSkill()` |
+| `internal/cmd/root.go` | Register `install-skill` subcommand; call `installSkill()` in `runInit` |
+| `internal/cmd/tasks.go` | Add `installSkill()` call in `runInit` |
+| `Makefile` | Add `install-skill` target |
+| `internal/cmd/cmd_test.go` | `TestInitInstallsSkill` — verifies skill file written to HOME |
+
+---
+
+### Phase 2 — Binary: `taskboard event` subcommand
+
+**Goal:** Structured milestone logging with conditional Matrix routing.
+
+#### 2.1 Event type routing table
+
+```go
+var eventLevels = map[string]string{
+    "build-failed": "alert",
+    "test-failed":  "alert",
+    "try-auth":     "alert",
+    "task-done":    "log",
+    "try-pushed":   "log",
+    "waiting":      "log",
+    // progress, build-started, build-done, test-started, test-passed → no Matrix
+}
+```
+
+#### 2.2 Implementation in `internal/cmd/tasks.go`
+
+```go
+func runEvent(args []string) error {
+    proj, rest := resolveProject(args)
+    if len(rest) < 3 {
+        return fmt.Errorf("usage: taskboard event <type> <agent> <message>")
+    }
+    eventType, agentName, message := rest[0], rest[1], rest[2]
+
+    known, err := newStore(proj).IsKnownAgent(agentName)
+    if err != nil {
+        return err
+    }
+    if !known {
+        return fmt.Errorf("unknown agent %q: not registered in team.json", agentName)
+    }
+    if err := appendLog(logFile(proj), agentName, message); err != nil {
+        return err
+    }
+    if level, ok := eventLevels[eventType]; ok {
+        exec.Command("matrix-cli", "notify", level, message).Run()
+    }
+    return syncStatus(proj)
+}
+```
+
+#### 2.3 Deliverables
+
+| File | Change |
+|---|---|
+| `internal/cmd/tasks.go` | Add `eventLevels` map, `runEvent` function |
+| `internal/cmd/root.go` | Register `event` subcommand |
+| `internal/cmd/cmd_test.go` | `TestEventCommand`, `TestEventRejectsUnknownAgent`, `TestEventMatrixAlert`, `TestEventMatrixLog`, `TestEventNoMatrix` |
+
+---
+
+### Phase 3 — Binary: `taskboard detect` + `syncAgentStatus` fix
+
+**Goal:** Expose project detection as a command; fix silent build agent status staleness.
+
+#### 3.1 `taskboard detect`
+
+In `internal/cmd/root.go`:
+```go
+case "detect":
+    fmt.Println(project.Detect(""))
+```
+
+One line. No side effects. Replaces the shell detection script in the skill's Step 0.
+
+#### 3.2 `syncAgentStatus` fix
+
+Current code (`internal/store/store.go`) only updates `InvestigationAgents` and
+`TaskAgents`. Add a scan of `BuildAgents`:
+
+```go
+func (s *TaskStore) syncAgentStatus(team *Team, bugID, status string) {
+    if a, ok := team.InvestigationAgents[bugID]; ok {
+        a.Status = status
+    }
+    if a, ok := team.TaskAgents[bugID]; ok {
+        a.Status = status
+    }
+    // NEW: sync build agent whose current_bug matches
+    for _, a := range team.BuildAgents {
+        if a.CurrentBug != nil && fmt.Sprintf("%d", *a.CurrentBug) == bugID {
+            a.Status = status
+        }
+    }
+}
+```
+
+#### 3.3 Deliverables
+
+| File | Change |
+|---|---|
+| `internal/cmd/root.go` | Register `detect` subcommand |
+| `internal/store/store.go` | Fix `syncAgentStatus` to scan `BuildAgents` |
+| `internal/cmd/cmd_test.go` | `TestDetectCommand` |
+| `internal/store/store_test.go` | `TestSyncAgentStatusUpdatesBuildAgent` |
+
+---
+
+### Phase 4 — Skill rewrite (`skills/taskboard.md`)
+
+**Goal:** Rewrite the canonical skill with all business logic fixes. Seven targeted
+edits applied to the file now living at `skills/taskboard.md` in this repo.
+
+#### Edit 1 — Add "Task Lifecycle" reference section
+
+Insert after "TUI Dashboard", before "Team Registry Format". Content: the two-slot
+agent model, five field rules, full state machine table, and log/btw/event decision
+table from section 3 of this document.
+
+This section is the canonical reference. All three agent prompts cite it by name
+rather than duplicating rules inline.
+
+#### Edit 2 — Fix team.json schema example
+
+Add `"tasks"` as the first top-level key with a full representative entry:
+
+```json
+"tasks": {
+  "2025475": {
+    "summary": "UAF in RemoteCDMChild when keys cleared after object destruction",
+    "status": "running",
+    "note": "Building (mach build)",
+    "worktree": "/Users/you/firefox-2025475"
+  }
+}
+```
+
+#### Edit 3 — Fix initialization Step 0
+
+Replace the hand-written shell detection script entirely:
+
+```bash
+PROJECT=$(taskboard detect)
+```
+
+Update the detection order description to match the binary:
+`TASKBOARD_PROJECT` → tmux → Zellij → `~/.taskboard/` single-project scan →
+CWD `firefox-` prefix → random fallback.
+
+Remove the note "detection order as `status.py`" — that reference is stale.
+
+#### Edit 4 — Fix manager: investigation spawn sequence
+
+Replace the "Investigate a bug" steps with:
+
+```
+1. Check team.json — skip if investigation_agents.X already has status running/waiting
+2. Write investigation_agents.X entry to team.json:
+   { agent_id: "inv-X", status: "running", build_type: "", claimed_files: [] }
+3. taskboard sync                          ← must come BEFORE spawn (fixes btw race)
+4. taskboard set-task X \
+     --summary "Bug X — investigating" \
+     --status running \
+     --note "Starting investigation"       ← prevents blank secondary row
 5. taskboard log manager "Investigating bug X"
-6. Spawn inv-X in background
+6. Spawn inv-X in background (Agent tool, run_in_background=true)
 7. taskboard log manager "Spawned inv-X"
 ```
-Writing team.json and calling sync before spawning fixes the registration race for
-investigation agents. Also prevents the blank secondary row (C4) by setting an
-initial note.
 
-**Edit 5 — Fix investigation agent prompt**:
-- Remove "Old positional form also still works" comment
-- Add intermediate note update on root cause:
-  `taskboard set-task X --note "Root cause: <one line>"`
-- Change final set-task to update only (manager already created the card):
-  ```bash
-  taskboard set-task XXXXXX --summary "<final one-liner>" --status waiting \
-    --note "Awaiting approval — [Investigation](${INV_URL})"
-  taskboard event waiting inv-XXXXXX "Investigation complete, awaiting approval"
-  ```
-- Add resumption protocol: if investigation file `~/firefox-bug-investigation/bug-X-investigation.md`
-  already exists when agent starts, skip to step 4 (write file, update team.json).
-  Do not restart from step 1.
+Same write-before-spawn rule applied to build agent dispatch in Dispatch Logic:
+write `build_agents[type]` entry to team.json and call sync BEFORE spawning the
+build agent.
 
-**Edit 6 — Fix build agent prompt**:
+#### Edit 5 — Fix investigation agent prompt
 
-a) After `claim-task` returns `{"claimed": true}`:
-   ```bash
-   taskboard set-task {bug_id} --status running
-   ```
-
-b) After `git worktree add`:
-   ```bash
-   taskboard set-task {bug_id} --worktree ~/firefox-{bug_id}
-   ```
-
-c) Replace ALL positional `set-task` calls with flag form.
-
-d) Add retry recovery: after build or test failure, once manager sends "retry",
-   agent calls `taskboard set-task {bug_id} --status running --note "Retrying"`,
-   then resumes from the last successful checkpoint (re-apply patch only if worktree
-   is clean; re-run tests only if build is current).
-
-e) Add build lock contention waiting: if another bug holds the lock on re-queue,
-   set note and poll:
-   ```bash
-   taskboard set-task {bug_id} --status waiting --note "Waiting for build lock (held by bug {x})"
-   # poll every 60s until lock is released
-   taskboard set-task {bug_id} --status running --note "Lock acquired, resuming"
-   ```
-
-f) Add worktree cleanup to "When fully done":
-   ```bash
-   git -C ~/firefox-{bug_id} worktree remove ~/firefox-{bug_id} --force
-   ```
-
-g) Consolidate duplicate BTW block into one canonical paragraph citing the decision
-   table. Add explicit rule: send `btw` before launching `./mach build` regardless
-   of whether it's the first or tenth build command.
-
-h) Add note: `set-task` and `done-task` call sync internally. Direct team.json
-   writes (agent registration) require explicit `taskboard sync` afterwards.
-
-i) Add losing-race behavior: if `claim-task` returns `{"claimed": false}`,
-   do NOT proceed. SendMessage to manager: "Lost claim on {bug_id} to {owner}."
-   Then check queue for next available bug or go idle.
-
-**Edit 7 — Add missing manager user commands**:
-
-Add "Reject a bug" command:
+**Resumption protocol** (add at top of Steps section):
 ```
-Trigger: "reject X", "redo X", "investigation wrong for X"
-1. Send "Investigation rejected. Revise based on: {feedback}" to inv-X via SendMessage
+0. Check if ~/firefox-bug-investigation/bug-X-investigation.md already exists.
+   If yes: skip steps 1–3, go directly to step 4 (update team.json + set-task).
+   This handles session restart without redoing all research.
+```
+
+**Root cause update** (add between step 1 and final step):
+```bash
+# When root cause is identified:
+taskboard set-task XXXXXX \
+  --summary "<one-line root cause>" \
+  --note "Root cause identified — writing investigation file"
+taskboard event progress inv-XXXXXX "Root cause: <summary>"
+```
+
+**Final set-task** (replace current call — manager already created the card):
+```bash
+taskboard set-task XXXXXX \
+  --summary "<confirmed final one-liner>" \
+  --status waiting \
+  --note "Awaiting approval — [Investigation](${INV_URL})"
+taskboard event waiting inv-XXXXXX "Investigation complete, awaiting approval"
+```
+
+Remove the "Old positional form also still works" comment entirely.
+
+#### Edit 6 — Fix build agent prompt
+
+**6a** — After `claim-task` returns `{"claimed": true}`:
+```bash
+taskboard set-task {bug_id} --status running
+```
+
+**6b** — After `git worktree add ~/firefox-{bug_id}`:
+```bash
+taskboard set-task {bug_id} --worktree ~/firefox-{bug_id}
+```
+
+**6c** — Replace ALL positional `set-task` calls with flag form. Every occurrence of:
+```bash
+taskboard set-task {id} "{summary}" running "{note}" {worktree}
+```
+becomes:
+```bash
+taskboard set-task {id} --status running --note "{note}"
+```
+(`--summary` and `--worktree` only when those fields actually change.)
+
+**6d** — Add retry recovery protocol:
+```
+On "retry" message from manager:
+1. taskboard set-task {bug_id} --status running --note "Retrying"
+2. If worktree is clean (no uncommitted changes): re-apply patch from investigation file
+   If worktree has changes: build is current, skip to test step
+3. If build artifacts exist and source unchanged: skip mach build, go straight to tests
+4. Resume from earliest failed step
+```
+
+**6e** — Add build lock contention protocol:
+```bash
+# On re-queue when lock is held by another bug:
+taskboard set-task {bug_id} --status waiting \
+  --note "Waiting for build lock (held by bug {x})"
+# Poll every 60s:
+while [ -f "{obj_dir}/.build.lock" ]; do sleep 60; done
+taskboard set-task {bug_id} --status running --note "Lock acquired, resuming"
+```
+
+**6f** — Add worktree cleanup to "When fully done":
+```bash
+git worktree remove ~/firefox-{bug_id} --force 2>/dev/null || true
+```
+(After `done-task`, before clearing team.json build slot.)
+
+**6g** — BTW: remove duplicate paragraph. Replace both with one canonical block:
+```
+Send btw:
+- Immediately on startup (before reading anything)
+- Immediately before EVERY build or test command (even if it's the only one)
+- Every 60s while waiting for a long-running command
+- When switching intention
+
+A single ./mach build takes 8–15 min. Send btw before launching it, then refresh
+every 60s while it runs via a background polling loop or between polling intervals.
+Never assume "it's one command" exempts you from refreshing.
+```
+
+**6h** — Add sync discipline note:
+```
+sync is baked into set-task and done-task — no explicit taskboard sync needed after them.
+Direct team.json writes (registering agents) require explicit taskboard sync afterwards.
+```
+
+**6i** — Add losing-race behavior:
+```
+If claim-task returns {"claimed": false, "owner": "..."}:
+- Do NOT proceed with this bug
+- SendMessage to manager: "Lost claim on {bug_id} to {owner}. Standing by."
+- Check build_agents[type].queue for next available bug
+- If queue empty: set status = "idle", wait for SendMessage
+```
+
+#### Edit 7 — Add missing manager user commands
+
+**Add "Reject a bug" command** (new section in User Commands):
+```
+Trigger: "reject X", "redo X", "investigation wrong for X", "revise X"
+
+1. SendMessage to inv-X: "Investigation rejected. Revise based on: {user feedback}"
 2. taskboard set-task X --status running --note "Investigation rejected — revising"
 3. taskboard sync
+4. Update investigation_agents.X.status = "running" in team.json
+5. taskboard sync
 ```
 
-Add file conflict dispatch update:
+**Update "Approve a bug"** — add file conflict and re-queue card updates:
 ```bash
-taskboard set-task X --status waiting --note "Waiting — file conflict with agent-{x}"
+# If file conflicts detected:
+taskboard set-task X --status waiting \
+  --note "Waiting — file conflict with {agent} on {files}"
 taskboard sync
-```
 
-Add re-queue after review feedback:
-```bash
+# When re-queuing after review feedback:
 taskboard set-task X --status running --note "Re-queued after review feedback"
 taskboard sync
-# write build_agents entry to team.json BEFORE sending message to build agent
+# Write build_agents[type] entry to team.json BEFORE sending message to build agent:
 taskboard sync
 ```
 
-For build agent dispatch in Dispatch Logic: write `build_agents[type]` entry to
-team.json and call sync BEFORE spawning the build agent (fixes btw registration
-race for build agents, same fix as Edit 4 for investigation agents).
+**Update Dispatch Logic** — write-before-spawn rule:
+```
+For all build agent spawns:
+1. Write build_agents[type] entry to team.json first
+2. taskboard sync
+3. THEN spawn the build agent
+This ensures the agent's btw and event calls succeed from the first line.
+```
 
 ---
 
@@ -387,19 +636,19 @@ is once the manager creates it), the overlay shows the correct build type. No fi
 
 ### 5.5 Plan coverage summary
 
-| Phase | Addresses | Misses |
+| Phase / Edit | Addresses | Notes |
 |---|---|---|
-| Phase 0 (lifecycle doc) | State machine, field rules, log/btw/event table | — |
-| Phase 1 (event binary) | F01 | — |
-| Phase 2 (detect + syncAgentStatus) | F08, F21 | — |
-| Edit 1 (lifecycle section) | F20 | — |
-| Edit 2 (schema fix) | F19 | — |
-| Edit 3 (detection) | F21 | — |
-| Edit 4 (manager spawn) | F03 partial, F04, F11 partial | F05 (boilerplate summary) |
-| Edit 5 (inv agent) | F02 partial, F15 | F05 unless option 3 added |
-| Edit 6 (build agent) | F02, F03, F05 partial, F09, F10, F12, F13, F14, F25 | — |
-| Edit 7 (manager commands) | F06, F10, F11 | — |
-| Not addressed | F18 (task/utility agents — out of scope), F24 (build type — acceptable) | |
+| Phase 1 (skill bundling + init) | Skill version sync, install on every init | New — not in original plan |
+| Phase 2 (event binary) | F01 | Prerequisite for Phase 4 |
+| Phase 3 (detect + syncAgentStatus) | F08, F21 | Can run in parallel with Phase 2 |
+| Phase 4 Edit 1 (lifecycle section) | F16, F17, F20, F22 | Authoritative reference |
+| Phase 4 Edit 2 (schema fix) | F19 | — |
+| Phase 4 Edit 3 (detection) | F21 | — |
+| Phase 4 Edit 4 (manager spawn) | F04, F10, F11 | Write-before-spawn rule |
+| Phase 4 Edit 5 (inv agent) | F05, F15 | Resumption + mid-investigation summary |
+| Phase 4 Edit 6 (build agent) | F02, F03, F09, F10, F12, F13, F14, F25 | — |
+| Phase 4 Edit 7 (manager commands) | F06, F10, F11 | Reject + conflict + re-queue |
+| Not addressed | F18 — out of scope; F24 — acceptable as-is | |
 
 ---
 
@@ -437,11 +686,18 @@ Step-by-step TUI state a user sees from "investigate bug 2026875" to "task done"
 
 ## 7. Execution Order
 
-1. **Phase 1** — implement `event` in binary
-2. **Phase 2** — implement `detect`, fix `syncAgentStatus`
-3. **Phase 3** — rewrite `skill.md` (all 7 edits)
+```
+Phase 1 (skill bundling + init install)  ─┐
+Phase 2 (taskboard event)                ─┼─→ Phase 4 (skill rewrite, 7 edits)
+Phase 3 (detect + syncAgentStatus fix)   ─┘
+```
 
-Phases 1 and 2 in parallel. Phase 3 depends on both (skill references new subcommands).
+Phases 1, 2, 3 are independent — run in parallel.
+Phase 4 depends on all three: the skill references `taskboard event` and
+`taskboard detect`, and is installed via the Phase 1 mechanism.
+
+Within Phase 4: write Edits 1–3 first (structure, schema, detection), then
+Edits 4–7 (agent prompts) which reference the lifecycle section from Edit 1.
 
 ---
 
