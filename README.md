@@ -55,7 +55,7 @@ at the end — install tmux manually and re-run `taskboard init` before continui
 
 ### 3. Open Claude inside a tmux session
 
-> **tmux is required.** taskboard splits your terminal to show the TUI alongside
+> ⚠️ **TMUX IS REQUIRED.** taskboard splits your terminal to show the TUI alongside
 > your Claude session. Open a tmux session before launching Claude Code:
 >
 > ```bash
