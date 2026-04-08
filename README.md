@@ -4,6 +4,8 @@ A CLI tool and terminal dashboard for coordinating multi-agent Firefox bug work.
 It tracks tasks, agents, file ownership, and build progress across parallel
 Claude sessions, with a live Bubble Tea TUI for at-a-glance status.
 
+![taskboard TUI](screenshot.png)
+
 ## Install
 
 **With `go install` (recommended):**
@@ -117,26 +119,6 @@ build, task, or utility agent); unregistered agents are rejected with an error.
 
 The TUI dashboard shows tasks and logs in a split layout. Launch with `taskboard tui`
 or `taskboard open` (which splits the current pane automatically).
-
-### Layout
-
-```
-taskboard  [project-name]               2026-04-07  14:30:00
-┌─ TASKS (2/3) ──────────────────────────────────────────┐
-│ ▶ RUN  2026875 — UAF in RemoteCDMChild                 │
-│       firefox-2026875 · compiling…                      │
-│ ⏸ WAI  2027100 — Crash in MediaDecoder                 │
-│       >> blocked on build agent                         │
-│ ✓ DON  2025354                                          │
-│       removing in 287s                                  │
-└────────────────────────────────────────────────────────┘
-┌─ LOG ──────────────────────────────────────────────────┐
-│ 14:29:55  agent-debug  build started                   │
-│ 14:30:01  inv-2026875  root cause identified           │
-└────────────────────────────────────────────────────────┘
- agent-debug · compiling dom/media/ipc/RemoteCDMChild.cpp
- Press Tab to switch focus · q to quit
-```
 
 ### Task cards
 
