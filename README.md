@@ -120,6 +120,21 @@ build, task, or utility agent); unregistered agents are rejected with an error.
 The TUI dashboard shows tasks and logs in a split layout. Launch with `taskboard tui`
 or `taskboard open` (which splits the current pane automatically).
 
+**`taskboard open` requires tmux.** It creates a new tmux split pane and launches
+the TUI inside it. `taskboard tui` works without tmux (runs in the current terminal).
+
+### tmux setup
+
+Add to `~/.tmux.conf`:
+
+```tmux
+set -g mouse on
+```
+
+This enables mouse wheel scrolling inside the TUI. Without it, scrolling will not
+work in tmux. After focusing a pane by clicking, the first click is consumed by
+tmux — subsequent clicks and scrolls work normally. Use `Shift+click` for text selection.
+
 ### Task cards
 
 Each task card shows:
@@ -135,21 +150,6 @@ Opens a full-detail panel showing:
 - **Files** — `claimed_files` from `team.json`
 - **Note** — task note field
 - **Links** — Bugzilla link; review-server link (shown only when the worktree has unpushed patches)
-
-### tmux prerequisite
-
-Add to `~/.tmux.conf` for mouse support:
-
-```tmux
-set -g mouse on
-```
-
-Without this, mouse wheel scrolling in the TUI will not work inside tmux.
-
-After focusing a tmux pane by clicking, the first click is consumed by tmux to switch
-focus — this is expected behaviour. Subsequent clicks/scrolls work normally.
-
-Text selection in tmux requires `Shift+click` (mouse mode intercepts plain clicks).
 
 ## TUI keyboard shortcuts
 
