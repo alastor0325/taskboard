@@ -369,11 +369,11 @@ Notes:
 Print: `✓ Watcher: started`
 Print: `✓ Healthcheck cron: installed` (or "already present")
 
-**Do NOT run `taskboard open` via Bash.** Instead, output the following line verbatim so the user can run it themselves with the `!` prefix:
+**CRITICAL — TUI launch is USER-ONLY. Never run `taskboard open`, `taskboard tui`, `tmux`, or any split-pane command via the Bash tool.** These require a real TTY and will be blocked. Instead, output this line verbatim and tell the user to paste it:
 ```
 ! taskboard open --project ${PROJECT}
 ```
-Print: `✓ TUI: run the line above in your terminal to open the dashboard`
+Print: `✓ TUI: paste the line above into your terminal to open the dashboard`
 
 **Final line** (after all steps):
 ```
