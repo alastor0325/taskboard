@@ -464,8 +464,8 @@ func TestInstallSkillCommand(t *testing.T) {
 	if _, err := os.Stat(dest); err != nil {
 		t.Fatalf("skill not installed: %v", err)
 	}
-	if !strings.Contains(out, "skill installed") {
-		t.Errorf("expected 'skill installed' in output, got: %q", out)
+	if !strings.Contains(out, "skill") {
+		t.Errorf("expected skill output, got: %q", out)
 	}
 }
 

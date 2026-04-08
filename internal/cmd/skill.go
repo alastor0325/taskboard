@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,18 +9,28 @@ import (
 	"github.com/alastor0325/taskboard/internal/skilldata"
 )
 
-func installSkill() error {
+func installSkill() (updated bool, err error) {
 	dest := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "taskboard", "SKILL.md")
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return fmt.Errorf("create skill dir: %w", err)
+		return false, fmt.Errorf("create skill dir: %w", err)
 	}
-	return os.WriteFile(dest, skilldata.Taskboard, 0o644)
+	existing, _ := os.ReadFile(dest)
+	if bytes.Equal(existing, skilldata.Taskboard) {
+		return false, nil
+	}
+	return true, os.WriteFile(dest, skilldata.Taskboard, 0o644)
 }
 
 func runInstallSkill(args []string) error {
-	if err := installSkill(); err != nil {
+	dest := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "taskboard", "SKILL.md")
+	updated, err := installSkill()
+	if err != nil {
 		return err
 	}
-	fmt.Println("skill installed →", filepath.Join(os.Getenv("HOME"), ".claude", "skills", "taskboard", "SKILL.md"))
+	if updated {
+		fmt.Println("skill updated →", dest, "(restart Claude session to pick up changes)")
+	} else {
+		fmt.Println("skill already up to date →", dest)
+	}
 	return nil
 }

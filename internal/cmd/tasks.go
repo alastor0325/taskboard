@@ -18,14 +18,33 @@ func syncStatus(proj string) error {
 
 func runInit(args []string) error {
 	proj, _ := resolveProject(args)
-	if err := installSkill(); err != nil {
+	fmt.Println("Initializing taskboard...")
+
+	updated, err := installSkill()
+	if err != nil {
 		return fmt.Errorf("install skill: %w", err)
 	}
+	if updated {
+		fmt.Println("[x] Skill: updated (restart Claude session to pick up changes)")
+	} else {
+		fmt.Println("[x] Skill: up to date")
+	}
+
 	writeLogResetMarker(proj)
+	fmt.Printf("[x] Project: %s\n", proj)
+
 	if err := appendLog(logFile(proj), "manager", "session started"); err != nil {
 		return err
 	}
-	return syncStatus(proj)
+	fmt.Println("[x] Log: reset marker written")
+
+	if err := syncStatus(proj); err != nil {
+		return err
+	}
+	fmt.Println("[x] Status: synced")
+
+	fmt.Println("Ready.")
+	return nil
 }
 
 func runSync(args []string) error {
