@@ -85,10 +85,100 @@ Agent name conventions for log entries:
 
 ---
 
+## Task Lifecycle
+
+### The two agent slots
+
+```
+task {bug_id}
+  ├── investigation slot → investigation_agents["{bug_id}"]
+  └── build slot         → build_agents["{type}"].current_bug == {bug_id}
+```
+
+- **Investigation slot**: filled before spawning `inv-{id}`. Status: `running` → `waiting` → `approved`.
+- **Build slot**: filled when build agent calls `claim-task`. Cleared when fully done.
+- Both slots can be non-empty simultaneously.
+- Task agents and utility agents are not linked to a specific task card.
+
+### Task field update rules
+
+| Field | Owner | When it changes |
+|---|---|---|
+| `--summary` | Manager (placeholder) then inv agent (final) | Twice: at spawn, at investigation completion |
+| `--status` | Manager and build agent | Only at meaningful phase transitions |
+| `--note` | Whoever owns the current phase | On every phase change; always explains why when `waiting` |
+| `--worktree` | Build agent | Once, immediately after `git worktree add` |
+| `done-task` | Build agent | Once, when fully complete — never use `--status done` |
+
+### Complete task lifecycle state machine
+
+| Phase | Who | status | note |
+|---|---|---|---|
+| Manager spawns investigation | Manager | `running` | `"Starting investigation"` |
+| Inv: root cause found | Inv agent | *(no change)* | `"Root cause: <one line>"` |
+| Inv: file written | Inv agent | `waiting` | `"Awaiting approval — [Investigation](url)"` |
+| User rejects investigation | Manager | `running` | `"Investigation rejected — revising"` |
+| User cancels bug | Manager | — | `done-task` |
+| User approves, manager dispatches | Manager | `running` | `"Dispatched to agent-{type}"` |
+| Build: claim-task succeeds | Build agent | `running` | *(no change)* |
+| Build: worktree created | Build agent | *(no change)* | *(note unchanged; worktree field set)* |
+| Build: applying patch | Build agent | *(no change)* | `"Applying patch"` |
+| Build: building | Build agent | *(no change)* | `"Building (mach build)"` |
+| Build: build failed | Build agent | `waiting` | `"Build failed: <short error>"` |
+| Manager approves retry | Manager | `running` | `"Retrying build"` |
+| Build: running tests | Build agent | *(no change)* | `"Running mochitest-media"` |
+| Build: tests failed | Build agent | `waiting` | `"Tests failed: <test name>"` |
+| Manager approves test retry | Manager | `running` | `"Fixing test failure"` |
+| Build: plan ready | Build agent | `waiting` | `"Plan ready — awaiting approval"` |
+| Build: try push submitted | Build agent | *(no change)* | `"[Try N](url)"` |
+| File conflict blocking dispatch | Manager | `waiting` | `"Waiting — file conflict with agent-{x}"` |
+| Conflict resolved, re-dispatched | Manager | `running` | `"Dispatched to agent-{type}"` |
+| Re-queued after review feedback | Manager | `running` | `"Re-queued after review feedback"` |
+| Lock contention on re-queue | Build agent | `waiting` | `"Waiting for build lock (held by bug {x})"` |
+| Build fully complete | Build agent | — | `done-task {id}` |
+
+### Log vs BTW vs event — when to use each
+
+**`taskboard log`** — free-form narrative, always persisted, no Matrix, safe to call frequently.
+
+**`taskboard btw`** — volatile intention heartbeat (120s TTL). Rules:
+- Send immediately before any multi-step scope starts
+- Send immediately before EVERY build or test command (even if it's the only command)
+- Refresh every ~60s while waiting for a long-running command
+- Never rely on "it's one command" to skip refreshes — `./mach build` takes 8–15 min
+
+**`taskboard event`** — structured milestone, always logged, conditionally notifies Matrix:
+
+| Type | When | Matrix |
+|---|---|---|
+| `progress` | Root cause or notable milestone | none |
+| `waiting` | Awaiting user input | none |
+| `build-started` | `./mach build` launched | none |
+| `build-done` | Build succeeded | none |
+| `build-failed` | Build failed | **alert** |
+| `test-started` | Test run launched | none |
+| `test-passed` | All tests passed | none |
+| `test-failed` | Tests failed | **alert** |
+| `try-pushed` | Try push submitted | log |
+| `try-auth` | Try push needs auth | **alert** |
+| `task-done` | Bug fully complete | log |
+
+**Sync discipline:** `set-task` and `done-task` call sync internally — no explicit `taskboard sync` needed after them. Direct `team.json` writes (registering agents in `investigation_agents`, `build_agents`) do NOT auto-sync — the manager must call `taskboard sync` explicitly after writing these.
+
+---
+
 ## Team Registry Format
 
 ```json
 {
+  "tasks": {
+    "2025475": {
+      "summary": "UAF in RemoteCDMChild when keys cleared after object destruction",
+      "status": "running",
+      "note": "Building (mach build)",
+      "worktree": "/Users/you/firefox-2025475"
+    }
+  },
   "investigation_agents": {
     "2025475": {
       "agent_id": "inv-2025475",
@@ -199,24 +289,11 @@ Initializing taskboard...
 
 **Step 0 — Detect project**
 
-`taskboard` uses the same detection order as `status.py`:
-1. `--project` flag or `TASKBOARD_PROJECT` env var
-2. tmux session name (if tmux is available and session name is not `"0"` or empty)
-3. current directory name stripped of `firefox-` prefix (if it starts with `firefox-`)
-4. uuid fallback
+Detection order: `TASKBOARD_PROJECT` env → tmux session → Zellij `$ZELLIJ_SESSION_NAME` → `~/.taskboard/` single-project scan → CWD `firefox-` prefix → random fallback.
 
 Capture it:
 ```bash
-PROJECT=$(tmux display-message -p '#S' 2>/dev/null | grep -v '^0$' | grep .)
-if [ -z "$PROJECT" ]; then
-  _cwd=$(basename "$PWD")
-  if echo "$_cwd" | grep -q '^firefox-'; then
-    PROJECT="${_cwd#firefox-}"
-  fi
-fi
-if [ -z "$PROJECT" ]; then
-  PROJECT="session-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:8])')"
-fi
+PROJECT=$(taskboard detect)
 ```
 Print: `[x] Project: {project}`
 
@@ -315,19 +392,15 @@ Match intent, not exact wording.
 
 ⚠️ **If `/bug-start` or any other skill is invoked in this session, treat it as an "investigate bug X" command. Do NOT follow that skill's steps inline — dispatch to a background agent immediately and stop.**
 
-1. Check team.json — if an entry for this bug already has status `running` or
-   `waiting`, report it and skip.
-2. Spawn an investigation agent **in the background, immediately**:
-   ```
-   Agent tool: run_in_background=true, name="inv-{X}"
-   prompt: <Investigation Agent Prompt below, XXXXXX substituted>
-   ```
-   **MANDATORY — log the spawn immediately after the Agent tool returns:**
-   ```bash
-   taskboard log manager "Spawned inv-{X}"
-   ```
-3. Update team.json: add `investigation_agents.X` with `status: "running"`.
-4. Reply immediately without waiting: "Investigating bug X in background."
+1. Check team.json — skip if `investigation_agents.X` already has status `running` or `waiting`.
+2. Write `investigation_agents.X` entry to team.json: `{ agent_id: "inv-X", status: "running", build_type: "", claimed_files: [] }`
+3. `taskboard sync`   ← BEFORE spawning (fixes btw registration race)
+4. `taskboard set-task X --summary "Bug X — investigating" --status running --note "Starting investigation"`
+5. `taskboard log manager "Investigating bug X"`
+6. Spawn inv-X in background (Agent tool, `run_in_background=true`)
+7. `taskboard log manager "Spawned inv-X"`
+
+Reply immediately without waiting: "Investigating bug X in background."
 
 Multiple investigation agents run fully in parallel. Always spawn immediately
 and return control to the user.
@@ -346,6 +419,15 @@ and `build_type`. Nothing more.
    - Relay responses back verbatim.
    - Do not add context, summarize, or interpret.
 4. Stay in relay mode until user says "back", "stop", "done", or approves.
+
+### Reject a bug
+
+**Trigger:** "reject X", "redo X", "investigation wrong for X", "revise X"
+
+1. SendMessage to inv-X: "Investigation rejected. Revise based on: {user feedback}"
+2. `taskboard set-task X --status running --note "Investigation rejected — revising"`
+3. Update `investigation_agents.X.status = "running"` in team.json
+4. `taskboard sync`
 
 ### Approve a bug
 
@@ -384,9 +466,12 @@ Always show the before/after diff and confirm before writing.
 
 1. Determine the build type for X (from investigation entry or ask).
 2. Append X to `build_agents.{type}.queue` in team.json.
-3. SendMessage to that build agent: "Bug X re-queued after review feedback.
+3. `taskboard set-task X --status running --note "Re-queued after review feedback"`
+4. `taskboard sync`
+5. Write `build_agents[type]` entry to team.json BEFORE sending message to the build agent, then `taskboard sync`.
+6. SendMessage to that build agent: "Bug X re-queued after review feedback.
    Re-read ~/firefox-bug-investigation/bug-X-investigation.md before starting."
-4. Report: "Bug X re-queued on agent-{type}."
+7. Report: "Bug X re-queued on agent-{type}."
 
 ### Cancel a bug
 
@@ -412,9 +497,13 @@ Always show the before/after diff and confirm before writing.
    - Do not dispatch yet.
    - Tell user: "Bug X conflicts with agent {agent} on {files}. Will queue after it clears."
    - Add a `pending_dispatch` note to team.json for X.
+   ```bash
+   taskboard set-task X --status waiting --note "Waiting — file conflict with {agent} on {files}"
+   taskboard sync
+   ```
 
 3. **Assign to build agent:**
-   - **No entry yet for this type**: spawn a new build agent (see *Build Agent Prompt* below).
+   - **No entry yet for this type**: write `build_agents[type]` entry to team.json, then call `taskboard sync` BEFORE spawning the build agent. Then spawn the new build agent (see *Build Agent Prompt* below).
      After spawning, call `claim-task` to atomically register ownership:
      ```bash
      taskboard claim-task X {agent_name}
@@ -475,23 +564,32 @@ You are an investigation agent for Firefox bug XXXXXX.
     "Waiting for approval"
 
 ## Steps
+0. Check if ~/firefox-bug-investigation/bug-XXXXXX-investigation.md already exists. If yes: skip steps 1–3, go directly to step 4. This handles session restart without redoing all research.
 1. Follow the bug-start skill workflow to investigate this bug fully.
 2. Determine the required build type: "asan", "fuzz", "debug", "frontend", or "opt".
 3. Identify which source files will need to change (claimed_files).
+
+When root cause is identified (between investigation and writing the file):
+   ```bash
+   taskboard set-task XXXXXX \
+     --summary "<one-line root cause>" \
+     --note "Root cause identified — writing investigation file"
+   taskboard event progress inv-XXXXXX "Root cause: <summary>"
+   ```
+
 4. Write your findings to ~/firefox-bug-investigation/bug-XXXXXX-investigation.md.
 5. Update team.json (path: `echo ~/.taskboard/${PROJECT}/team.json`):
    - Set investigation_agents.XXXXXX.build_type and claimed_files
    - Set investigation_agents.XXXXXX.summary: one routing-only line, no technical details
-6. Push the investigation file to GitHub first (so the link is live), then create a task card. The note MUST include a hyperlink to the investigation file. Derive the GitHub URL from the actual local file path you wrote — take the filename and replace the local base path with the GitHub base URL:
+6. Push the investigation file to GitHub first (so the link is live), then update the task card (manager already created it at spawn). The note MUST include a hyperlink to the investigation file. Derive the GitHub URL from the actual local file path you wrote — take the filename and replace the local base path with the GitHub base URL:
    ```bash
    # INV_FILE is the actual path you wrote, e.g. ~/firefox-bug-investigation/bug-XXXXXX-investigation.md
    INV_FILENAME=$(basename "${INV_FILE}")
    INV_URL="https://github.com/alastor0325/firefox-bug-investigation/blob/main/${INV_FILENAME}"
    taskboard set-task XXXXXX \
-     --summary "{summary}" --status waiting \
-     --note "Investigation complete — awaiting your approval. [Investigation](${INV_URL})"
-   # Old positional form also still works:
-   # taskboard set-task XXXXXX "{summary}" waiting "note" ~/firefox-XXXXXX
+     --summary "<confirmed final one-liner>" --status waiting \
+     --note "Awaiting approval — [Investigation](${INV_URL})"
+   taskboard event waiting inv-XXXXXX "Investigation complete, awaiting approval"
    ```
 
 Then STOP. Present only this to the manager:
@@ -547,23 +645,15 @@ Read `~/.claude/skills/firefox-manager/CLAUDE.md` before doing any work. It cont
 **`btw`** — intention heartbeat, TUI only, volatile (disappears after 120s).
   taskboard btw {agent_name} "<current intention>"
 
-  Send the FIRST btw immediately after reading team.json — before doing any work.
-  Refresh every ~60s and immediately before EVERY individual build or test run command.
-  Examples:
-    "Reading investigation file for bug {id}"
-    "Applying patch changes"
+Send btw:
+- Immediately on startup (before reading anything)
+- Immediately before EVERY build or test command (even if it's the only one)
+- Every 60s while waiting for a long-running command
+- When switching intention
 
-**MANDATORY — intention heartbeat**: declare your current intention via `btw` at the START
-of any multi-step work scope and refresh it every ~60s while still in that scope. Do NOT
-wait for a single slow command — individual commands may each be <30s but the scope takes
-minutes. The TUI card goes blank after 120s with no update, so refresh before that deadline:
+A single `./mach build` takes 8–15 min. Send btw before launching it, then refresh every 60s while it runs. Never assume "it's one command" exempts you from refreshing.
 
-  taskboard btw {agent_name} "<current intention>"
-
-Send the FIRST btw immediately after reading team.json — before doing any work. Update it
-when switching to a different intention. Examples:
-  "Reading investigation file for bug {id}"
-  "Applying patch changes"
+**`set-task` and `done-task` call sync internally — no explicit `taskboard sync` needed after them. Direct team.json writes (registering agents) require explicit `taskboard sync` afterwards.**
 
 **MANDATORY — changes to source files require tests**: Whenever a source file in the Firefox tree is modified, add or update tests in the same commit.
 The pre-commit hook will block the commit otherwise. If existing tests already cover
@@ -572,17 +662,11 @@ the change, spawn a background agent to add them rather than skipping — do not
 **MANDATORY — update task card note when work phase changes**: whenever you move to a new
 phase of work (e.g. from "applying review feedback" to "fixing CI failures"), update the
 task card note immediately:
-  taskboard set-task {bug_id} "{summary}" running "{new note}" {worktree}
-  "Building (mach build)"
-  "Running mediacontrol tests"
-  "Diagnosing test failure"
-  "Waiting for manager approval"
+  taskboard set-task {bug_id} --status running --note "{new note}"
+  Examples of notes: "Building (mach build)", "Running mediacontrol tests",
+  "Diagnosing test failure", "Waiting for manager approval"
 
 **MANDATORY — reference test failures in code changes**: If a code change (implementation or test fix) is motivated by a specific test failure — whether from a CI run, a local failure, or a known flakiness pattern — you MUST cite it in either the commit message body or a code comment. Include: the test name, the platform/configuration where it failed, and the try push or CI run where it was observed (if known). A change that defends against a failure with no traceable evidence must be flagged for discussion rather than silently committed.
-
-Additionally, send a btw immediately before EVERY individual build or test run command
-(each individual build, each individual test run, each bisect step — not just the first).
-This covers the case where a single command exceeds the 120s TTL on its own.
 
 ## Startup and between tasks
 
@@ -594,7 +678,11 @@ This covers the case where a single command exceeds the 120s TTL on its own.
    taskboard claim-task {bug_id} {agent_name}
    # → {"claimed": true} or {"claimed": false, "owner": "..."}
    ```
-   If `claimed: false`, another agent already owns it — skip to the next queued bug or go idle.
+   If `claimed: false`: do NOT proceed with this bug. SendMessage to manager: "Lost claim on {bug_id} to {owner}. Standing by." Then check `build_agents[type].queue` for next available bug. If queue empty: set status = "idle", wait for SendMessage.
+   If `claimed: true`:
+   ```bash
+   taskboard set-task {bug_id} --status running
+   ```
    `claim-task` sets `current_bug`, `status: busy`, and transitions the task to `running` atomically.
    After claiming, update `claimed_files` in team.json from the investigation file.
 
@@ -638,8 +726,14 @@ and every test run for the entire bug. Do not release between patches or
 between build and test.
 
   LOCK="{obj_dir}/.build.lock"
-  If lock exists and PID inside is alive: report "Locked by {other bug}."
-    and poll every 60s until released.
+  If lock exists and PID inside is alive:
+    ```bash
+    taskboard set-task {bug_id} --status waiting \
+      --note "Waiting for build lock (held by bug {x})"
+    # poll every 60s until lock is released
+    while [ -f "{obj_dir}/.build.lock" ]; do sleep 60; done
+    taskboard set-task {bug_id} --status running --note "Lock acquired, resuming"
+    ```
   Write: BUG={id} PID=$$ > $LOCK
 
 ## Code exploration
@@ -684,7 +778,10 @@ Skill("firefox-implementation")
 
 This is a concrete tool call, not a mental reference. The skill drives the
 entire implementation session, including:
-- Worktree creation (`git worktree add ~/firefox-{id}`)
+- Worktree creation (`git worktree add ~/firefox-{id}`) — immediately after which you MUST call:
+  ```bash
+  taskboard set-task {bug_id} --worktree ~/firefox-{bug_id}
+  ```
 - Session rename (`/rename bug-{id}-{short-description}`)
 - Plan mode and user approval (you MUST wait for approval before writing code)
 - TDD gate (test MUST fail before fix is written, pass after — non-negotiable)
@@ -717,6 +814,14 @@ Then report what (if anything) appeared in the logs and what you observed.
 
 **CI / try runs** (Treeherder, Lando job): these legitimately take 30–90 minutes. Poll every 5–10 minutes. Do NOT bail out early. Wait until all jobs have a result before running `ci-failure-analysis`.
 
+## Retry recovery
+
+On receiving "retry" from manager:
+1. `taskboard set-task {bug_id} --status running --note "Retrying"`
+2. If worktree is clean (no uncommitted changes): re-apply patch from investigation file. If worktree has changes: build is current, skip to test step.
+3. If build artifacts exist and source unchanged: skip `./mach build`, go straight to tests.
+4. Resume from earliest failed step.
+
 ## Build monitoring
 
 After launching `./mach build`, do NOT poll the raw PID. Use the build-progress
@@ -747,8 +852,8 @@ After each major milestone, SendMessage to "manager" with the result and
 **wait for a reply before continuing**. Do NOT complete — stay alive.
 
 Milestones that require a manager reply before proceeding:
-- Plan ready: call `taskboard set-task {bug_id} "{summary}" waiting "Plan ready — awaiting your approval."`, then send plan and wait for approval before writing any code
-- Build failure: call `taskboard set-task {bug_id} "{summary}" failed "Build failed: {short error}"`, then SendMessage error to manager
+- Plan ready: call `taskboard set-task {bug_id} --status waiting --note "Plan ready — awaiting your approval."`, then send plan and wait for approval before writing any code
+- Build failure: call `taskboard set-task {bug_id} --status waiting --note "Build failed: {short error}"`, then SendMessage error to manager
 - TDD result: did test fail without fix?
 - Verify clean
 - Commits done: send commit hashes, wait for human review approval
@@ -762,12 +867,13 @@ Only exit when the manager sends a shutdown message after human review is done.
 human has reviewed and approved.
 
 1. rm {obj_dir}/.build.lock
-2. Update team.json (path from `echo ~/.taskboard/${PROJECT}/team.json`):
+2. `git worktree remove ~/firefox-{bug_id} --force 2>/dev/null || true`
+3. Update team.json (path from `echo ~/.taskboard/${PROJECT}/team.json`):
    - current_bug = null, claimed_files = [], status = "idle" (or "busy"
      if queue still has entries)
-3. Mark the task done: `taskboard done-task {bug_id}`
-4. SendMessage to "manager": "Bug {id} complete. Ready for submission."
-5. Wait for manager shutdown message before exiting.
+4. Mark the task done: `taskboard done-task {bug_id}`
+5. SendMessage to "manager": "Bug {id} complete. Ready for submission."
+6. Wait for manager shutdown message before exiting.
 
 ## On re-queue after review feedback
 
