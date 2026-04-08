@@ -6,19 +6,29 @@ Claude sessions, with a live Bubble Tea TUI for at-a-glance status.
 
 ## Install
 
+**With `go install` (recommended):**
+
 ```bash
-git clone <this-repo>
+go install github.com/alastor0325/taskboard/cmd/taskboard@latest
+```
+
+Installs to `~/go/bin/taskboard`. Make sure `~/go/bin` is on your `PATH`:
+
+```bash
+# add to ~/.zshrc or ~/.bashrc if not already there
+export PATH="$HOME/go/bin:$PATH"
+```
+
+**From source:**
+
+```bash
+git clone https://github.com/alastor0325/taskboard
 cd taskboard
 make install
 ```
 
-`make install` builds the binary and copies it to `~/.local/bin/taskboard`.
-Make sure `~/.local/bin` is on your `PATH`:
-
-```bash
-# add to ~/.zshrc or ~/.bashrc if not already there
-export PATH="$HOME/.local/bin:$PATH"
-```
+`make install` builds and copies the binary to `~/.local/bin/taskboard`
+(creates the directory if needed, and ad-hoc code-signs on macOS).
 
 ## Usage
 
