@@ -34,12 +34,31 @@ func openTmux(proj string, widthPercent int) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return fmt.Errorf("tmux split-window: %w: %s", err, msg)
-		}
-		return fmt.Errorf("tmux split-window: %w", err)
+		return fmtCmdErr("tmux split-window", err, stderr.String())
 	}
 	return nil
+}
+
+func openZellij(proj string) error {
+	cmd := exec.Command(
+		"zellij", "action", "new-pane",
+		"--direction", "right",
+		"--", selfexec.Path(), "tui", "--project", proj,
+	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmtCmdErr("zellij new-pane", err, stderr.String())
+	}
+	return nil
+}
+
+// fmtCmdErr wraps an exec error, appending stderr output when present.
+func fmtCmdErr(cmdName string, err error, stderr string) error {
+	if msg := strings.TrimSpace(stderr); msg != "" {
+		return fmt.Errorf("%s: %w: %s", cmdName, err, msg)
+	}
+	return fmt.Errorf("%s: %w", cmdName, err)
 }
 
 // killTmuxTUIPanes kills all tmux panes whose command is "taskboard", skipping the caller's own pane.
@@ -71,12 +90,4 @@ func tuiPanesToKill(output, myPane string) []string {
 		ids = append(ids, paneID)
 	}
 	return ids
-}
-
-func openZellij(proj string) error {
-	return exec.Command(
-		"zellij", "action", "new-pane",
-		"--direction", "right",
-		"--", selfexec.Path(), "tui", "--project", proj,
-	).Run()
 }

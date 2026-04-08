@@ -80,9 +80,12 @@ func appendLog(logPath, agent, message string) error {
 
 func appendBtw(logPath, agent, message string) error {
 	bp := btwFilePath(logPath)
-	data, _ := os.ReadFile(bp)
 	var entries []types.BtwEntry
-	json.Unmarshal(data, &entries)
+	if data, err := os.ReadFile(bp); err == nil {
+		if err := json.Unmarshal(data, &entries); err != nil {
+			return fmt.Errorf("parse btw file %s: %w", bp, err)
+		}
+	}
 
 	now := float64(time.Now().Unix())
 	var filtered []types.BtwEntry
@@ -140,9 +143,12 @@ func writeJSON(path string, v any) error {
 	return os.Rename(tmpName, path)
 }
 
-func writeLogResetMarker(proj string) {
+func writeLogResetMarker(proj string) error {
 	marker := filepath.Join(os.TempDir(), ".taskboard-"+proj+"-log-reset")
-	os.WriteFile(marker, []byte{}, 0o644)
+	if err := os.WriteFile(marker, []byte{}, 0o644); err != nil {
+		return fmt.Errorf("write log reset marker: %w", err)
+	}
+	return nil
 }
 
 func printJSON(v any) error {

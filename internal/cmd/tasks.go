@@ -51,7 +51,9 @@ func runInit(args []string) error {
 		fmt.Println("✓ Skill: up to date")
 	}
 
-	writeLogResetMarker(proj)
+	if err := writeLogResetMarker(proj); err != nil {
+		return err
+	}
 	fmt.Printf("✓ Project: %s\n", proj)
 
 	if err := appendLog(logFile(proj), "manager", "session started"); err != nil {

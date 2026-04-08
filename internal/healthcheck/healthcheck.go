@@ -43,7 +43,9 @@ func Run(proj string) error {
 
 	pidFile := filepath.Join(os.TempDir(), ".taskboard-"+safe+"-watcher.pid")
 	if isWatcherDead(pidFile) {
-		exec.Command(selfexec.Path(), "watcher", "--project", proj).Start()
+		if err := exec.Command(selfexec.Path(), "watcher", "--project", proj).Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "healthcheck: respawn watcher: %v\n", err)
+		}
 	}
 
 	exec.Command(selfexec.Path(), "sync", "--project", proj).Run()
