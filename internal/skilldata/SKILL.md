@@ -279,7 +279,7 @@ check can verify liveness on restart.
 ## Initialization
 
 On `/taskboard` (including session resume after a crash or restart), work through
-the checklist below. **Print the header first, then print each `[x]` line as
+the checklist below. **Print the header first, then print each `✓` line as
 that step completes. Do not dump JSON, file contents, or verbose output — one
 line per step.**
 
@@ -295,19 +295,19 @@ Capture it:
 ```bash
 PROJECT=$(taskboard detect)
 ```
-Print: `[x] Project: {project}`
+Print: `✓ Project: {project}`
 
 **Step 1 — Ensure project directory**
 ```bash
 mkdir -p ~/.taskboard/${PROJECT}
 ```
-Print: `[x] Directory: ~/.taskboard/{project}`
+Print: `✓ Directory: ~/.taskboard/{project}`
 
 **Step 2 — Load team.json**
 Read `~/.taskboard/${PROJECT}/team.json`; create it with the empty
 structure (all five top-level keys: `tasks`, `investigation_agents`,
 `build_agents`, `task_agents`, `utility_agents`) if it does not exist.
-Print: `[x] Team: {N} bugs, {M} build agents` (or "empty" if no entries)
+Print: `✓ Team: {N} bugs, {M} build agents` (or "empty" if no entries)
 
 **Step 3 — Stale lock check and auto-cleanup**
 For each `obj_dir` in `build_agents`, check `{obj_dir}/.build.lock`. Read the
@@ -316,7 +316,7 @@ stale — **auto-delete it**:
 ```bash
 rm {obj_dir}/.build.lock
 ```
-Print: `[x] Locks: none` or `[x] Locks: removed stale lock for bug {id} in {obj_dir}`
+Print: `✓ Locks: none` or `✓ Locks: removed stale lock for bug {id} in {obj_dir}`
 
 **Step 4 — Agent health check and auto-respawn**
 For every agent with status `"busy"` or `"running"`, **and also for every build agent with `current_bug != null` regardless of status** (status field may be stale — an agent can die while marked `"idle"` if the manager forgot to update it after dispatching work):
@@ -347,7 +347,7 @@ taskboard check-build-progress "{obj_dir}"
   "Build stalled — no compiler activity for 30+ min. Last artifact: {last_artifact}. Restart the build."
 - `no_artifacts` → build has not started yet; agent may be at an early step (pre-build), ignore.
 
-Print: `[x] Agents: {N} alive, {M} dead, {K} stalled` (list names in each category)
+Print: `✓ Agents: {N} alive, {M} dead, {K} stalled` (list names in each category)
 
 **For each dead agent, auto-respawn immediately** — do not ask the user:
 - Read the investigation file and team.json entry for context.
@@ -355,7 +355,7 @@ Print: `[x] Agents: {N} alive, {M} dead, {K} stalled` (list names in each catego
   path, current team.json state, what the previous agent completed, what remains.
 - Update `agent_id` and `output_file` in team.json after spawning.
 - Log: `taskboard log manager "Auto-respawned {agent_name} (previous agent dead)"`
-Print: `[x] Auto-respawned: {list of respawned agents}` (or omit line if none)
+Print: `✓ Auto-respawned: {list of respawned agents}` (or omit line if none)
 
 **Step 5 — Launch TUI, watcher, and healthcheck cron**
 ```bash
@@ -367,9 +367,9 @@ taskboard open --project ${PROJECT}
 Notes:
 - `taskboard open` opens a new TUI pane in the current tmux/zellij session, closing any existing one first. Other sessions are unaffected.
 - Always launch the watcher unconditionally — it uses a per-project PID file and exits immediately if already running.
-Print: `[x] TUI: launched`
-Print: `[x] Watcher: started`
-Print: `[x] Healthcheck cron: installed` (or "already present")
+Print: `✓ TUI: launched`
+Print: `✓ Watcher: started`
+Print: `✓ Healthcheck cron: installed` (or "already present")
 
 **Final line** (after all steps):
 ```
