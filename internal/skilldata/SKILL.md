@@ -357,19 +357,23 @@ Print: `✓ Agents: {N} alive, {M} dead, {K} stalled` (list names in each catego
 - Log: `taskboard log manager "Auto-respawned {agent_name} (previous agent dead)"`
 Print: `✓ Auto-respawned: {list of respawned agents}` (or omit line if none)
 
-**Step 5 — Launch TUI, watcher, and healthcheck cron**
+**Step 5 — Launch watcher, healthcheck cron, and TUI**
+Run these via Bash:
 ```bash
 taskboard init --project ${PROJECT}
 nohup taskboard watcher --project ${PROJECT} > /tmp/taskboard-watcher-${PROJECT}.log 2>&1 & disown
 taskboard healthcheck --project ${PROJECT}
-taskboard open --project ${PROJECT}
 ```
 Notes:
-- `taskboard open` opens a new TUI pane in the current tmux/zellij session, closing any existing one first. Other sessions are unaffected.
 - Always launch the watcher unconditionally — it uses a per-project PID file and exits immediately if already running.
-Print: `✓ TUI: launched`
 Print: `✓ Watcher: started`
 Print: `✓ Healthcheck cron: installed` (or "already present")
+
+**Do NOT run `taskboard open` via Bash.** Instead, output the following line verbatim so the user can run it themselves with the `!` prefix:
+```
+! taskboard open --project ${PROJECT}
+```
+Print: `✓ TUI: run the line above in your terminal to open the dashboard`
 
 **Final line** (after all steps):
 ```

@@ -4,17 +4,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/alastor0325/taskboard/internal/selfexec"
 )
 
-const tuiWindowName = "taskboard-tui"
-
-// Open detects the active multiplexer and opens a new window for the TUI.
-func Open(proj string, _ int) error {
+// Open detects the active multiplexer and splits a pane for the TUI.
+func Open(proj string, widthPercent int) error {
 	if os.Getenv("TMUX") != "" {
-		return openTmux(proj)
+		return openTmux(proj, widthPercent)
 	}
 	if os.Getenv("ZELLIJ_SESSION_NAME") != "" {
 		return openZellij(proj)
@@ -23,47 +22,43 @@ func Open(proj string, _ int) error {
 	return nil
 }
 
-func openTmux(proj string) error {
-	killTmuxTUIWindows()
-	cmd := exec.Command(
-		"tmux", "new-window",
-		"-n", tuiWindowName,
-		"--", selfexec.Path(), "tui", "--project", proj,
-	)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg != "" {
-			fmt.Fprintf(os.Stderr, "tmux new-window: %s\n", msg)
-		}
-		fmt.Printf("Run 'taskboard tui --project %s' in a new terminal pane.\n", proj)
-	}
-	return nil
+func openTmux(proj string, widthPercent int) error {
+	// Kill any existing taskboard tui panes before opening a new one.
+	killTmuxTUIPanes()
+	return exec.Command(
+		"tmux", "split-window", "-h",
+		"-p", strconv.Itoa(widthPercent),
+		selfexec.Path(), "tui", "--project", proj,
+	).Run()
 }
 
-// killTmuxTUIWindows closes any existing taskboard-tui windows in the current session.
-func killTmuxTUIWindows() {
-	out, err := exec.Command("tmux", "list-windows",
-		"-F", "#{window_id} #{window_name}").Output()
+// killTmuxTUIPanes kills all tmux panes whose command is "taskboard", skipping the caller's own pane.
+func killTmuxTUIPanes() {
+	out, err := exec.Command("tmux", "list-panes", "-a",
+		"-F", "#{pane_id} #{pane_current_command}").Output()
 	if err != nil {
 		return
 	}
-	for _, id := range tuiWindowsToKill(string(out)) {
-		exec.Command("tmux", "kill-window", "-t", id).Run() //nolint:errcheck
+	myPane := os.Getenv("TMUX_PANE")
+	for _, paneID := range tuiPanesToKill(string(out), myPane) {
+		exec.Command("tmux", "kill-pane", "-t", paneID).Run() //nolint:errcheck
 	}
 }
 
-func tuiWindowsToKill(output string) []string {
+// tuiPanesToKill parses tmux list-panes output and returns IDs of panes running
+// "taskboard" that are not the caller's own pane (myPane).
+func tuiPanesToKill(output, myPane string) []string {
 	var ids []string
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue
 		}
-		if fields[1] == tuiWindowName {
-			ids = append(ids, fields[0])
+		paneID, cmd := fields[0], fields[1]
+		if paneID == myPane || cmd != "taskboard" {
+			continue
 		}
+		ids = append(ids, paneID)
 	}
 	return ids
 }

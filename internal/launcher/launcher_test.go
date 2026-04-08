@@ -4,42 +4,54 @@ import (
 	"testing"
 )
 
-func TestTuiWindowsToKill(t *testing.T) {
+func TestTuiPanesToKill(t *testing.T) {
 	tests := []struct {
 		name   string
 		output string
+		myPane string
 		want   []string
 	}{
 		{
-			name:   "kills taskboard-tui windows",
-			output: "@1 taskboard-tui\n@2 zsh\n@3 taskboard-tui",
-			want:   []string{"@1", "@3"},
+			name: "kills taskboard panes excluding own",
+			output: "%3 taskboard\n%4 zsh\n%5 taskboard\n%6 vim",
+			myPane: "%3",
+			want:   []string{"%5"},
 		},
 		{
-			name:   "no taskboard-tui windows",
-			output: "@1 zsh\n@2 vim",
+			name:   "no taskboard panes",
+			output: "%1 zsh\n%2 vim",
+			myPane: "%1",
 			want:   nil,
 		},
 		{
 			name:   "empty output",
 			output: "",
+			myPane: "%1",
 			want:   nil,
 		},
 		{
-			name:   "single taskboard-tui window",
-			output: "@1 taskboard-tui",
-			want:   []string{"@1"},
+			name:   "own pane is the only taskboard pane",
+			output: "%1 taskboard",
+			myPane: "%1",
+			want:   nil,
+		},
+		{
+			name:   "multiple taskboard panes none are own",
+			output: "%2 taskboard\n%3 taskboard",
+			myPane: "%1",
+			want:   []string{"%2", "%3"},
 		},
 		{
 			name:   "malformed lines are skipped",
-			output: "\n  \n@2 taskboard-tui",
-			want:   []string{"@2"},
+			output: "\n  \n%2 taskboard",
+			myPane: "%1",
+			want:   []string{"%2"},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := tuiWindowsToKill(tc.output)
+			got := tuiPanesToKill(tc.output, tc.myPane)
 			if len(got) != len(tc.want) {
 				t.Fatalf("got %v, want %v", got, tc.want)
 			}
