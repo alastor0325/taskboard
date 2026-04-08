@@ -1,12 +1,14 @@
 # taskboard
 
 A CLI tool and terminal dashboard for coordinating multi-agent Firefox bug work.
-It tracks tasks, agents, file ownership, and build progress across parallel
-Claude sessions, with a live Bubble Tea TUI for at-a-glance status.
+Tracks tasks, agents, file ownership, and build progress across parallel Claude
+sessions, with a live Bubble Tea TUI for at-a-glance status.
 
 ![taskboard TUI](screenshot.png)
 
-## Install
+## Getting started
+
+### 1. Install
 
 **With `go install` (recommended):**
 
@@ -17,8 +19,7 @@ go install github.com/alastor0325/taskboard/cmd/taskboard@latest
 Installs to `~/go/bin/taskboard`. Make sure `~/go/bin` is on your `PATH`:
 
 ```bash
-# add to ~/.zshrc or ~/.bashrc if not already there
-export PATH="$HOME/go/bin:$PATH"
+export PATH="$HOME/go/bin:$PATH"   # add to ~/.zshrc or ~/.bashrc
 ```
 
 **From source:**
@@ -26,149 +27,137 @@ export PATH="$HOME/go/bin:$PATH"
 ```bash
 git clone https://github.com/alastor0325/taskboard
 cd taskboard
-make install
+make install   # builds + installs to ~/.local/bin/taskboard
 ```
 
-`make install` builds and copies the binary to `~/.local/bin/taskboard`
-(creates the directory if needed, and ad-hoc code-signs on macOS).
+### 2. Initialize
 
-## Usage
-
-```
-taskboard init                          # start session, write reset marker
-taskboard sync                          # re-read team.json, update agent-status.json
-taskboard set-task <bug_id> [flags]     # create or partially update a task
-  --summary <text>
-  --status  <idle|running|waiting|done>
-  --note    <text>
-  --worktree <path>
-taskboard done-task <bug_id>            # mark task done (sets done_at timestamp)
-taskboard claim-task <bug_id> <agent>   # atomic claim → {"claimed":true} or {"claimed":false,"owner":"..."}
-taskboard who-owns <bug_id>             # ownership query → {"owner":"<agent>" | null}
-taskboard file-conflicts <bug_id>       # file conflict check → {"conflicts":[...]}
-taskboard log <agent> <message>         # append a log entry to agent-status.json
-taskboard btw <agent> <message>         # volatile heartbeat (TTL 120s; agent must be registered)
-taskboard notify <log|alert|done> <msg> # log entry + optional Matrix notification
-taskboard agent-health <file> [secs]    # liveness check by output file mtime → {"status":"alive"|"stale"|"dead"}
-taskboard check-build-progress <dir> [min]  # build stall detection → {"status":"active"|"stalled"|"no_artifacts"}
-taskboard tui                           # launch TUI dashboard
-taskboard watcher                       # start watcher daemon (auto-syncs on team.json changes, cleans up done tasks)
-taskboard healthcheck                   # run one healthcheck pass
-taskboard open [--width <pct>]          # split tmux/zellij pane and launch TUI
-
-Global flag:
-  --project <name>                      # override project detection
+```bash
+taskboard init
 ```
 
-## Project detection
+This installs the `/taskboard` Claude skill to `~/.claude/skills/taskboard/SKILL.md`
+and sets up the session. After this, everything is driven through Claude — you do
+not run taskboard commands manually.
 
-When `--project` is not specified, the project name is detected in this order:
+### 3. Start a session in Claude
 
-1. `TASKBOARD_PROJECT` env var
-2. tmux session name (`tmux display-message -p "#S"`)
-3. Zellij session name (`$ZELLIJ_SESSION_NAME`)
-4. `~/.taskboard/` directory scan (only if exactly one project exists)
-5. CWD basename if it starts with `firefox-`
-6. Random `session-{hex}` fallback
-
-## Data files
-
-- `~/.taskboard/{project}/team.json` — task and agent state (source of truth)
-- `~/.taskboard/{project}/agent-status.json` — TUI data (or `$AGENT_STATUS_FILE`)
-
-### team.json top-level keys
-
-All five keys are always present; missing keys are initialised to `{}` on load:
+In a Claude Code session, invoke the skill:
 
 ```
-tasks                investigation_agents
-build_agents         task_agents
-utility_agents
+/taskboard
 ```
 
-## Watcher
+Claude becomes the manager: it spawns investigation and build agents, updates the
+dashboard, and routes work between them. You interact only with the manager.
 
-`taskboard watcher` polls `team.json` every second and:
+> **tmux is required** for `taskboard open` (the auto-split TUI pane). Add
+> `set -g mouse on` to `~/.tmux.conf` to enable mouse wheel scrolling in the TUI.
 
-- Calls `sync` whenever the file changes (keeps `agent-status.json` up to date).
-- Calls `CleanupDone` on every tick, removing tasks that have been in `done` state for more than 5 minutes.
-- Uses a per-project PID file and exits immediately if already running.
+---
 
-## Task lifecycle
+## How it works
 
-Valid status transitions enforced by `set-task`:
+taskboard coordinates three types of Claude agents:
 
-```
-(new) → running
-idle  → running | done
-waiting → running | idle | done
-running → idle | waiting | done
-done  → (terminal)
-```
+- **Investigation agents** — research a bug, identify root cause and affected files, write an investigation file, then wait for your approval.
+- **Build agents** — apply patches, build, test, and submit to Phabricator.
+- **Task/utility agents** — ad-hoc background work (test writing, audits, etc.).
 
-`done-task` bypasses the transition table and always sets `done` + `done_at` timestamp.
-Done tasks are removed by the watcher after a 5-minute TTL.
+All state is shared through two files:
 
-## BTW heartbeats
+| File | Purpose |
+|---|---|
+| `~/.taskboard/{project}/team.json` | Source of truth — agents, tasks, file ownership |
+| `~/.taskboard/{project}/agent-status.json` | TUI feed (written by `taskboard sync`) |
 
-`btw` messages are volatile — they expire after 120 seconds and are only displayed
-in the TUI BTW bar. The agent must be registered in `team.json` (investigation,
-build, task, or utility agent); unregistered agents are rejected with an error.
+The TUI reads `agent-status.json` and shows a live task board with per-task status,
+notes, worktree, and agent heartbeats.
+
+---
 
 ## TUI
 
-The TUI dashboard shows tasks and logs in a split layout. Launch with `taskboard tui`
-or `taskboard open` (which splits the current pane automatically).
-
-**`taskboard open` requires tmux.** It creates a new tmux split pane and launches
-the TUI inside it. `taskboard tui` works without tmux (runs in the current terminal).
-
-### tmux setup
-
-Add to `~/.tmux.conf`:
-
-```tmux
-set -g mouse on
-```
-
-This enables mouse wheel scrolling inside the TUI. Without it, scrolling will not
-work in tmux. After focusing a pane by clicking, the first click is consumed by
-tmux — subsequent clicks and scrolls work normally. Use `Shift+click` for text selection.
+The dashboard shows tasks on the left and a log feed on the right.
 
 ### Task cards
 
-Each task card shows:
-- Status badge (`▶ RUN`, `⏸ WAI`, `✓ DON`, `· IDL`, `✗ FAI`) with a color-coded border
-- Bug ID (hyperlinked to Bugzilla when numeric) and summary
-- Secondary row (priority order): done-expiry countdown → note → worktree basename → BTW message
+Each card shows:
+- Status badge (`▶ RUN`, `⏸ WAI`, `✓ DON`, `· IDL`) with a color-coded border
+- Bug ID (hyperlinked to Bugzilla) and summary
+- Secondary row: done-expiry countdown → note → worktree → live agent heartbeat
 
 ### Task detail overlay (`Enter`)
 
-Opens a full-detail panel showing:
 - **Agents** — investigation and build agent IDs, statuses, build type, queue position
-- **Live** — current BTW message from the owning agent
-- **Files** — `claimed_files` from `team.json`
-- **Note** — task note field
-- **Links** — Bugzilla link; review-server link (shown only when the worktree has unpushed patches)
+- **Live** — current heartbeat from the owning agent
+- **Files** — files claimed by this task
+- **Note** — current task note
+- **Links** — Bugzilla link; review-server link (when worktree has unpushed patches)
 
-## TUI keyboard shortcuts
+### Keyboard shortcuts
 
 | Key | Scope | Action |
 |---|---|---|
 | `Tab` | Global | Switch focus: TASKS ↔ LOG |
-| `↑↓` / `jk` | Focused section | Move cursor / scroll |
-| `g` / `G` | Focused section | Jump to top / bottom |
+| `↑↓` / `jk` | Focused pane | Scroll |
+| `g` / `G` | Focused pane | Jump to top / bottom |
 | `Enter` | TASKS | Open task detail overlay |
 | `ESC` | Overlay | Close overlay |
-| `/` | LOG | Activate log filter |
+| `/` | LOG | Filter log |
 | `q` / `ESC` | Global | Quit |
-| Mouse wheel | Focused section | Scroll |
+| Mouse wheel | Focused pane | Scroll |
+
+---
+
+## CLI reference
+
+These commands are called by Claude agents — you do not run them directly.
+
+```
+taskboard init                           # install skill, reset session
+taskboard sync                           # sync team.json → agent-status.json
+taskboard set-task <bug_id> [flags]      # create or update a task card
+  --summary <text>
+  --status  <idle|running|waiting|done>
+  --note    <text>
+  --worktree <path>
+taskboard done-task <bug_id>             # mark task done
+taskboard claim-task <bug_id> <agent>    # atomic ownership claim
+taskboard who-owns <bug_id>              # ownership query
+taskboard file-conflicts <bug_id>        # detect file overlap with other agents
+taskboard log <agent> <message>          # append log entry
+taskboard btw <agent> <message>          # volatile heartbeat (TTL 120s)
+taskboard event <type> <agent> <msg>     # structured milestone (routes to Matrix)
+taskboard agent-health <file> [secs]     # liveness check by output file mtime
+taskboard check-build-progress <dir>     # build stall detection
+taskboard detect                         # print detected project name
+taskboard tui                            # launch TUI in current terminal
+taskboard open [--width <pct>]           # split tmux pane and launch TUI
+taskboard watcher                        # start watcher daemon
+taskboard healthcheck                    # run one healthcheck pass
+
+Global flag:
+  --project <name>                       # override project detection
+```
+
+### Project detection order
+
+1. `--project` flag or `TASKBOARD_PROJECT` env var
+2. tmux session name
+3. Zellij session name (`$ZELLIJ_SESSION_NAME`)
+4. `~/.taskboard/` scan (if exactly one project exists)
+5. CWD basename if it starts with `firefox-`
+6. Random `session-{hex}` fallback
+
+---
 
 ## Development
 
 ```bash
-make build    # build ./taskboard binary
-make test     # go test ./...
-make lint     # go vet ./...
-make install  # install to ~/.local/bin/taskboard
+make build         # build ./taskboard binary
+make test          # go test ./...
+make lint          # go vet ./...
+make install       # install to ~/.local/bin/taskboard + install skill
+make install-skill # install skill only (no binary rebuild)
 ```
