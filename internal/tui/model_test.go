@@ -628,3 +628,62 @@ func TestRefreshTaskListPreservesCursor(t *testing.T) {
 		t.Errorf("cursor reset after refresh: got %d, want 2", m.taskList.Index())
 	}
 }
+
+func TestPollStatusDetectsTaskChange(t *testing.T) {
+	m, sf := newTestModel(t)
+
+	// Start with one running task.
+	writeStatusFile(t, sf, map[string]map[string]any{
+		"5001": {"status": "running", "summary": "initial task"},
+	}, nil, nil)
+	m = m.pollStatus()
+	if len(m.taskList.Items()) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(m.taskList.Items()))
+	}
+
+	// Add a second task — poll must detect the file change.
+	writeStatusFile(t, sf, map[string]map[string]any{
+		"5001": {"status": "running", "summary": "initial task"},
+		"5002": {"status": "waiting", "summary": "new task"},
+	}, nil, nil)
+	m = m.pollStatus()
+	if len(m.taskList.Items()) != 2 {
+		t.Errorf("expected 2 tasks after update, got %d", len(m.taskList.Items()))
+	}
+
+	// Mark first task done — poll must reflect the status change.
+	writeStatusFile(t, sf, map[string]map[string]any{
+		"5001": {"status": "done", "summary": "initial task"},
+		"5002": {"status": "waiting", "summary": "new task"},
+	}, nil, nil)
+	m = m.pollStatus()
+	items := m.taskList.Items()
+	found := false
+	for _, it := range items {
+		if tli, ok := it.(taskListItem); ok && tli.task.bugID == "5001" {
+			if tli.task.status != "done" {
+				t.Errorf("task 5001: got status %q, want done", tli.task.status)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Error("task 5001 not found in list")
+	}
+}
+
+func TestPollStatusIgnoresUnchangedFile(t *testing.T) {
+	m, sf := newTestModel(t)
+
+	writeStatusFile(t, sf, map[string]map[string]any{
+		"6001": {"status": "running", "summary": "task"},
+	}, nil, nil)
+	m = m.pollStatus()
+	firstMtime := m.lastMtime
+
+	// Poll again without changing the file — lastMtime must not change.
+	m = m.pollStatus()
+	if m.lastMtime != firstMtime {
+		t.Error("pollStatus re-read unchanged file (lastMtime changed)")
+	}
+}

@@ -1,10 +1,13 @@
 package watcher
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/alastor0325/taskboard/internal/store"
 )
 
 func TestGetWidthDefault(t *testing.T) {
@@ -127,5 +130,59 @@ func TestCheckRelaunchMarkerRemovesMarkerWhenLockFree(t *testing.T) {
 
 	if _, err := os.Stat(marker); err == nil {
 		t.Error("marker should have been removed when lock was free")
+	}
+}
+
+func TestCleanupDoneRemovesExpiredTasks(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("TASKBOARD_PROJECT", "test")
+	t.Setenv("AGENT_STATUS_FILE", filepath.Join(dir, "agent-status.json"))
+
+	teamDir := filepath.Join(dir, ".taskboard", "test")
+	os.MkdirAll(teamDir, 0o755)
+
+	// Write a team.json with one task already past the TTL.
+	past := float64(1) // Unix epoch — definitely expired
+	team := map[string]any{
+		"tasks": map[string]any{
+			"9999": map[string]any{
+				"summary": "old done task",
+				"status":  "done",
+				"done_at": past,
+			},
+			"1234": map[string]any{
+				"summary": "active task",
+				"status":  "running",
+			},
+		},
+		"investigation_agents": map[string]any{},
+		"build_agents":         map[string]any{},
+		"task_agents":          map[string]any{},
+		"utility_agents":       map[string]any{},
+	}
+	data, _ := json.Marshal(team)
+	teamFile := filepath.Join(teamDir, "team.json")
+	os.WriteFile(teamFile, data, 0o644)
+
+	st := store.New(teamFile)
+	removed, err := st.CleanupDone(store.DONE_TASK_TTL)
+	if err != nil {
+		t.Fatalf("CleanupDone: %v", err)
+	}
+	if !removed {
+		t.Fatal("expected task 9999 to be removed")
+	}
+
+	// Reload and verify task 9999 is gone but 1234 remains.
+	loaded, err := st.Load()
+	if err != nil {
+		t.Fatalf("Load after cleanup: %v", err)
+	}
+	if _, ok := loaded.Tasks["9999"]; ok {
+		t.Error("expired task 9999 should have been removed")
+	}
+	if _, ok := loaded.Tasks["1234"]; !ok {
+		t.Error("active task 1234 should still be present")
 	}
 }

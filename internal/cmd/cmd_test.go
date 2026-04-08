@@ -44,6 +44,11 @@ func setupProject(t *testing.T) (statusFile, proj string) {
 	// Also redirect the team.json and log.json under the same tmpdir so we
 	// don't touch the real ~/.firefox-manager directory.
 	t.Setenv("HOME", dir)
+	// Remove the reset marker so that log entries are not suppressed even
+	// when a previous test called "init" with the same proj name.
+	marker := filepath.Join(os.TempDir(), ".taskboard-"+proj+"-log-reset")
+	os.Remove(marker)
+	t.Cleanup(func() { os.Remove(marker) })
 	return statusFile, proj
 }
 
@@ -293,5 +298,138 @@ func TestSetTaskRejectsDashPrefix(t *testing.T) {
 	err2 := runArgs(t, "set-task", "-flag")
 	if err2 == nil {
 		t.Fatal("set-task -flag should return an error (- prefix rejected)")
+	}
+}
+
+// Integration tests: exercise multiple components together.
+
+func TestCommandFlowUpdatesStatusFile(t *testing.T) {
+	statusFile, _ := setupProject(t)
+
+	// init creates agent-status.json
+	if err := runArgs(t, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// set-task → agent-status.json must reflect the new task
+	if err := runArgs(t, "set-task", "9001", "--summary", "crash in MediaDecoder", "--status", "running"); err != nil {
+		t.Fatalf("set-task: %v", err)
+	}
+	data, _ := os.ReadFile(statusFile)
+	var status types.AgentStatus
+	if err := json.Unmarshal(data, &status); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	task, ok := status.Tasks["9001"]
+	if !ok {
+		t.Fatal("task 9001 not in agent-status.json after set-task")
+	}
+	if task.Status != "running" {
+		t.Errorf("status: got %q, want running", task.Status)
+	}
+
+	// done-task → task shows done in agent-status.json
+	if err := runArgs(t, "done-task", "9001"); err != nil {
+		t.Fatalf("done-task: %v", err)
+	}
+	data, _ = os.ReadFile(statusFile)
+	json.Unmarshal(data, &status)
+	if status.Tasks["9001"].Status != "done" {
+		t.Errorf("after done-task: got %q, want done", status.Tasks["9001"].Status)
+	}
+}
+
+func TestMultiCommandStateConsistency(t *testing.T) {
+	statusFile, proj := setupProject(t)
+
+	if err := runArgs(t, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+
+	// Claim a task then verify ownership persists through subsequent commands.
+	if err := runArgs(t, "set-task", "7777", "--summary", "UAF in CDMProxy", "--status", "running"); err != nil {
+		t.Fatalf("set-task: %v", err)
+	}
+
+	// Register a build agent so claim-task has somewhere to claim to.
+	st := newStore(proj)
+	team, _ := st.Load()
+	team.BuildAgents["agent-debug"] = &store.BuildAgent{AgentID: "agent-debug", Status: "idle"}
+	st.Save(team)
+
+	var claimErr error
+	captured := captureStdout(t, func() { claimErr = runArgs(t, "claim-task", "7777", "agent-debug") })
+	if claimErr != nil {
+		t.Fatalf("claim-task: %v", claimErr)
+	}
+	var claimResult map[string]any
+	json.Unmarshal([]byte(captured), &claimResult)
+	if claimResult["claimed"] != true {
+		t.Errorf("claim-task result: %v", claimResult)
+	}
+
+	// Subsequent who-owns must agree with claim result.
+	var ownsErr error
+	captured = captureStdout(t, func() { ownsErr = runArgs(t, "who-owns", "7777") })
+	if ownsErr != nil {
+		t.Fatalf("who-owns: %v", ownsErr)
+	}
+	var ownsResult map[string]any
+	json.Unmarshal([]byte(captured), &ownsResult)
+	if ownsResult["owner"] != "agent-debug" {
+		t.Errorf("who-owns after claim: got %v, want agent-debug", ownsResult["owner"])
+	}
+
+	// done-task removes the task; agent-status.json must reflect it.
+	if err := runArgs(t, "done-task", "7777"); err != nil {
+		t.Fatalf("done-task: %v", err)
+	}
+	data, _ := os.ReadFile(statusFile)
+	var status types.AgentStatus
+	json.Unmarshal(data, &status)
+	if status.Tasks["7777"] == nil || status.Tasks["7777"].Status != "done" {
+		t.Errorf("task 7777 not marked done in agent-status.json")
+	}
+}
+
+func TestLogAndBtwAppearsInStatusFile(t *testing.T) {
+	statusFile, proj := setupProject(t)
+
+	// Register an agent so btw validates. Do NOT call init — it writes a
+	// reset marker that suppresses logs for 10s.
+	st := newStore(proj)
+	team, _ := st.Load()
+	team.BuildAgents["agent-x"] = &store.BuildAgent{AgentID: "agent-x", Status: "idle"}
+	st.Save(team)
+
+	if err := runArgs(t, "log", "agent-x", "build started"); err != nil {
+		t.Fatalf("log: %v", err)
+	}
+	if err := runArgs(t, "btw", "agent-x", "compiling"); err != nil {
+		t.Fatalf("btw: %v", err)
+	}
+
+	data, _ := os.ReadFile(statusFile)
+	var status types.AgentStatus
+	json.Unmarshal(data, &status)
+
+	if len(status.Log) == 0 {
+		t.Error("log entry missing from agent-status.json")
+	}
+	found := false
+	for _, e := range status.Log {
+		if e.Agent == "agent-x" && e.Message == "build started" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("log entry 'build started' not found in agent-status.json")
+	}
+
+	if len(status.Btw) == 0 {
+		t.Error("btw entry missing from agent-status.json")
+	}
+	if status.Btw[0].Message != "compiling" {
+		t.Errorf("btw message: got %q, want compiling", status.Btw[0].Message)
 	}
 }
