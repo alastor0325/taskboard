@@ -46,29 +46,29 @@ func runInit(args []string) error {
 		return fmt.Errorf("install skill: %w", err)
 	}
 	if updated {
-		fmt.Println("[x] Skill: updated (restart Claude session to pick up changes)")
+		fmt.Println("✓ Skill: updated (restart Claude session to pick up changes)")
 	} else {
-		fmt.Println("[x] Skill: up to date")
+		fmt.Println("✓ Skill: up to date")
 	}
 
 	writeLogResetMarker(proj)
-	fmt.Printf("[x] Project: %s\n", proj)
+	fmt.Printf("✓ Project: %s\n", proj)
 
 	if err := appendLog(logFile(proj), "manager", "session started"); err != nil {
 		return err
 	}
-	fmt.Println("[x] Log: reset marker written")
+	fmt.Println("✓ Log: reset marker written")
 
 	if err := syncStatus(proj); err != nil {
 		return err
 	}
-	fmt.Println("[x] Status: synced")
+	fmt.Println("✓ Status: synced")
 
 	var tmuxErr error
 	if tmuxErr = ensureTmux(); tmuxErr == nil {
-		fmt.Println("[x] tmux: ready")
+		fmt.Println("✓ tmux: ready")
 	} else {
-		fmt.Println("[ ] tmux: not installed")
+		fmt.Println("✗ tmux: not installed")
 	}
 
 	fmt.Println("Ready.")

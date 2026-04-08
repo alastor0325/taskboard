@@ -42,11 +42,11 @@ exactly what happened:
 
 ```
 Initializing taskboard...
-[x] Skill: updated (restart Claude session to pick up changes)
-[x] Project: firefox-2026875
-[x] Log: reset marker written
-[x] Status: synced
-[x] tmux: ready
+✓ Skill: updated (restart Claude session to pick up changes)
+✓ Project: firefox-2026875
+✓ Log: reset marker written
+✓ Status: synced
+✓ tmux: ready
 Ready.
 ```
 
