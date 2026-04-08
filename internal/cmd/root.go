@@ -59,6 +59,8 @@ func Execute() error {
 		return runEvent(args)
 	case "notify":
 		return runNotify(args)
+	case "upgrade":
+		return runUpgrade(args)
 	case "install-skill":
 		return runInstallSkill(args)
 	case "detect":
@@ -104,6 +106,7 @@ Subcommands:
   btw <agent> <message>           volatile heartbeat (TTL 120s)
   event <type> <agent> <msg>      structured milestone + conditional Matrix
   notify <log|alert|done> <msg>   Matrix notification + log
+  upgrade [version]               upgrade binary + skill (default: latest)
   install-skill                   install bundled skill to ~/.claude/skills/taskboard/
   detect                          print detected project name
   agent-health <file> [secs]      liveness check by output file mtime
