@@ -36,23 +36,46 @@ make install   # builds + installs to ~/.local/bin/taskboard
 taskboard init
 ```
 
-This installs the `/taskboard` Claude skill to `~/.claude/skills/taskboard/SKILL.md`
-and sets up the session. After this, everything is driven through Claude — you do
-not run taskboard commands manually.
+This installs the `/taskboard` Claude skill and verifies that tmux is available
+(installing it via `brew` or `apt-get` if not). The checklist output tells you
+exactly what happened:
 
-### 3. Start a session in Claude
+```
+Initializing taskboard...
+[x] Skill: updated (restart Claude session to pick up changes)
+[x] Project: firefox-2026875
+[x] Log: reset marker written
+[x] Status: synced
+[x] tmux: ready
+Ready.
+```
 
-In a Claude Code session, invoke the skill:
+If tmux is missing and cannot be installed automatically, a `WARNING` is printed
+at the end — install tmux manually and re-run `taskboard init` before continuing.
+
+### 3. Open Claude inside a tmux session
+
+> **tmux is required.** taskboard splits your terminal to show the TUI alongside
+> your Claude session. Open a tmux session before launching Claude Code:
+>
+> ```bash
+> tmux new-session -s firefox    # or attach: tmux attach -t firefox
+> claude                         # launch Claude Code inside tmux
+> ```
+>
+> Add `set -g mouse on` to `~/.tmux.conf` to enable mouse wheel scrolling in the TUI.
+
+### 4. Start the taskboard session in Claude
+
+In the Claude Code session, invoke the skill:
 
 ```
 /taskboard
 ```
 
-Claude becomes the manager: it spawns investigation and build agents, updates the
-dashboard, and routes work between them. You interact only with the manager.
-
-> **tmux is required** for `taskboard open` (the auto-split TUI pane). Add
-> `set -g mouse on` to `~/.tmux.conf` to enable mouse wheel scrolling in the TUI.
+Claude becomes the manager: it spawns investigation and build agents, opens the
+TUI dashboard in a split pane, and routes work between agents. You interact only
+with the manager — all taskboard commands are run by Claude on your behalf.
 
 ---
 

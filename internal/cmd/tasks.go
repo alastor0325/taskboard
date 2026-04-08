@@ -16,6 +16,27 @@ func syncStatus(proj string) error {
 	return writeStatus(proj, team)
 }
 
+func ensureTmux() error {
+	if _, err := exec.LookPath("tmux"); err == nil {
+		return nil
+	}
+	// try to install
+	var cmd *exec.Cmd
+	if _, err := exec.LookPath("brew"); err == nil {
+		cmd = exec.Command("brew", "install", "tmux")
+	} else if _, err := exec.LookPath("apt-get"); err == nil {
+		cmd = exec.Command("apt-get", "install", "-y", "tmux")
+	} else {
+		return fmt.Errorf("tmux not found and no supported package manager (brew/apt-get) available — install tmux manually")
+	}
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("tmux installation failed: %w — install tmux manually and re-run `taskboard init`", err)
+	}
+	return nil
+}
+
 func runInit(args []string) error {
 	proj, _ := resolveProject(args)
 	fmt.Println("Initializing taskboard...")
@@ -43,7 +64,18 @@ func runInit(args []string) error {
 	}
 	fmt.Println("[x] Status: synced")
 
+	var tmuxErr error
+	if tmuxErr = ensureTmux(); tmuxErr == nil {
+		fmt.Println("[x] tmux: ready")
+	} else {
+		fmt.Println("[ ] tmux: not installed")
+	}
+
 	fmt.Println("Ready.")
+	if tmuxErr != nil {
+		fmt.Printf("\nWARNING: %s\n", tmuxErr)
+		fmt.Println("         `taskboard open` will not work until tmux is installed.")
+	}
 	return nil
 }
 
