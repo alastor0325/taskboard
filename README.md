@@ -57,14 +57,14 @@ at the end — install tmux manually and re-run `taskboard init` before continui
 
 > ⚠️ **TMUX IS REQUIRED.** taskboard splits your terminal to show the TUI alongside your Claude session.
 >
-> Open a tmux session before launching Claude Code:
->
-> ```bash
-> tmux new-session -s firefox    # or attach: tmux attach -t firefox
-> claude                         # launch Claude Code inside tmux
-> ```
->
-> Add `set -g mouse on` to `~/.tmux.conf` to enable mouse wheel scrolling in the TUI.
+ Open a tmux session before launching Claude Code:
+
+```bash
+tmux new-session -s firefox    # or attach: tmux attach -t firefox
+claude                         # launch Claude Code inside tmux
+```
+
+Add `set -g mouse on` to `~/.tmux.conf` to enable mouse wheel scrolling in the TUI.
 
 ### 4. Start the taskboard session in Claude
 
