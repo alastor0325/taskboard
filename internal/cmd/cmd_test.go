@@ -12,6 +12,14 @@ import (
 	"github.com/alastor0325/taskboard/internal/types"
 )
 
+func registerAgent(t *testing.T, proj, agentName string) {
+	t.Helper()
+	st := newStore(proj)
+	team, _ := st.Load()
+	team.BuildAgents[agentName] = &store.BuildAgent{AgentID: agentName, Status: "idle"}
+	st.Save(team)
+}
+
 // captureStdout redirects os.Stdout to a pipe for the duration of fn and
 // returns whatever was written.
 func captureStdout(t *testing.T, fn func()) string {
@@ -431,5 +439,73 @@ func TestLogAndBtwAppearsInStatusFile(t *testing.T) {
 	}
 	if status.Btw[0].Message != "compiling" {
 		t.Errorf("btw message: got %q, want compiling", status.Btw[0].Message)
+	}
+}
+
+func TestInitInstallsSkill(t *testing.T) {
+	_, _ = setupProject(t)
+	if err := runArgs(t, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	dest := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "taskboard", "SKILL.md")
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("skill not installed: %v", err)
+	}
+}
+
+func TestInstallSkillCommand(t *testing.T) {
+	_, _ = setupProject(t)
+	out := captureStdout(t, func() {
+		if err := runArgs(t, "install-skill"); err != nil {
+			t.Errorf("install-skill: %v", err)
+		}
+	})
+	dest := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "taskboard", "SKILL.md")
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("skill not installed: %v", err)
+	}
+	if !strings.Contains(out, "skill installed") {
+		t.Errorf("expected 'skill installed' in output, got: %q", out)
+	}
+}
+
+func TestEventCommand(t *testing.T) {
+	_, proj := setupProject(t)
+	registerAgent(t, proj, "agent-debug")
+
+	if err := runArgs(t, "event", "build-done", "agent-debug", "build succeeded"); err != nil {
+		t.Fatalf("event: %v", err)
+	}
+}
+
+func TestEventRejectsUnknownAgent(t *testing.T) {
+	_, _ = setupProject(t)
+	err := runArgs(t, "event", "build-done", "phantom", "msg")
+	if err == nil {
+		t.Fatal("expected error for unknown agent")
+	}
+	if !strings.Contains(err.Error(), "unknown agent") {
+		t.Errorf("want 'unknown agent', got: %v", err)
+	}
+}
+
+func TestEventRejectsMissingArgs(t *testing.T) {
+	_, proj := setupProject(t)
+	registerAgent(t, proj, "agent-debug")
+	err := runArgs(t, "event", "build-done", "agent-debug")
+	if err == nil {
+		t.Fatal("expected error for missing message arg")
+	}
+}
+
+func TestDetectCommand(t *testing.T) {
+	_, _ = setupProject(t)
+	out := captureStdout(t, func() {
+		if err := runArgs(t, "detect"); err != nil {
+			t.Errorf("detect: %v", err)
+		}
+	})
+	if strings.TrimSpace(out) == "" {
+		t.Error("detect should print a non-empty project name")
 	}
 }

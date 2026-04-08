@@ -309,6 +309,11 @@ func (s *TaskStore) syncAgentStatus(team *Team, bugID, status string) {
 	if a, ok := team.TaskAgents[bugID]; ok {
 		a.Status = status
 	}
+	for _, a := range team.BuildAgents {
+		if a.CurrentBug != nil && fmt.Sprintf("%d", *a.CurrentBug) == bugID {
+			a.Status = status
+		}
+	}
 }
 
 // IsKnownAgent returns true if agentName matches any registered agent in team.json:

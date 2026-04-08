@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+
+	"github.com/alastor0325/taskboard/internal/project"
 )
 
 func Execute() error {
@@ -53,8 +55,15 @@ func Execute() error {
 		return runLog(args)
 	case "btw":
 		return runBtw(args)
+	case "event":
+		return runEvent(args)
 	case "notify":
 		return runNotify(args)
+	case "install-skill":
+		return runInstallSkill(args)
+	case "detect":
+		fmt.Println(project.Detect(""))
+		return nil
 	case "agent-health":
 		return runAgentHealth(args)
 	case "check-build-progress":
@@ -93,7 +102,10 @@ Subcommands:
   file-conflicts <bug_id>         file conflict check (JSON output)
   log <agent> <message>           append log entry
   btw <agent> <message>           volatile heartbeat (TTL 120s)
+  event <type> <agent> <msg>      structured milestone + conditional Matrix
   notify <log|alert|done> <msg>   Matrix notification + log
+  install-skill                   install bundled skill to ~/.claude/skills/taskboard/
+  detect                          print detected project name
   agent-health <file> [secs]      liveness check by output file mtime
   check-build-progress <dir> [m]  build stall detection
   tui                             launch TUI dashboard

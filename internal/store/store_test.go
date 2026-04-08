@@ -242,6 +242,29 @@ func TestWhoOwns(t *testing.T) {
 	}
 }
 
+func TestSyncAgentStatusUpdatesBuildAgent(t *testing.T) {
+	s := tmpStore(t)
+	bugID := int64(42)
+	team := emptyTeam()
+	team.Tasks["42"] = &Task{Status: "running"}
+	team.BuildAgents["debug"] = &BuildAgent{
+		AgentID:    "agent-debug",
+		Status:     "busy",
+		CurrentBug: &bugID,
+	}
+	s.Save(team)
+
+	status := "waiting"
+	if _, err := s.SetTask("42", SetTaskOpts{Status: &status}); err != nil {
+		t.Fatalf("SetTask: %v", err)
+	}
+
+	loaded, _ := s.Load()
+	if loaded.BuildAgents["debug"].Status != "waiting" {
+		t.Errorf("build agent status not synced: got %q, want waiting", loaded.BuildAgents["debug"].Status)
+	}
+}
+
 func TestFileConflicts(t *testing.T) {
 	s := tmpStore(t)
 	team := emptyTeam()

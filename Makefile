@@ -1,12 +1,15 @@
 BINARY := taskboard
 INSTALL_DIR := $(HOME)/.local/bin
 
-.PHONY: build install test lint clean
+.PHONY: build install install-skill test lint clean
 
 build:
 	go build -o $(BINARY) ./cmd/taskboard
 
-install: build
+install-skill: build
+	$(BINARY) install-skill
+
+install: build install-skill
 	mkdir -p $(INSTALL_DIR)
 	cp $(BINARY) $(INSTALL_DIR)/$(BINARY)
 	codesign --sign - $(INSTALL_DIR)/$(BINARY) 2>/dev/null || true

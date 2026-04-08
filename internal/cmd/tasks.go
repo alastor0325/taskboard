@@ -18,6 +18,9 @@ func syncStatus(proj string) error {
 
 func runInit(args []string) error {
 	proj, _ := resolveProject(args)
+	if err := installSkill(); err != nil {
+		return fmt.Errorf("install skill: %w", err)
+	}
 	writeLogResetMarker(proj)
 	if err := appendLog(logFile(proj), "manager", "session started"); err != nil {
 		return err
@@ -165,6 +168,37 @@ func runBtw(args []string) error {
 	}
 	if err := appendBtw(logFile(proj), agentName, rest[1]); err != nil {
 		return err
+	}
+	return syncStatus(proj)
+}
+
+var eventLevels = map[string]string{
+	"build-failed": "alert",
+	"test-failed":  "alert",
+	"try-auth":     "alert",
+	"task-done":    "log",
+	"try-pushed":   "log",
+	"waiting":      "log",
+}
+
+func runEvent(args []string) error {
+	proj, rest := resolveProject(args)
+	if len(rest) < 3 {
+		return fmt.Errorf("usage: taskboard event <type> <agent> <message>")
+	}
+	eventType, agentName, message := rest[0], rest[1], rest[2]
+	known, err := newStore(proj).IsKnownAgent(agentName)
+	if err != nil {
+		return err
+	}
+	if !known {
+		return fmt.Errorf("unknown agent %q: not registered in team.json", agentName)
+	}
+	if err := appendLog(logFile(proj), agentName, message); err != nil {
+		return err
+	}
+	if level, ok := eventLevels[eventType]; ok {
+		exec.Command("matrix-cli", "notify", level, message).Run()
 	}
 	return syncStatus(proj)
 }
