@@ -25,11 +25,22 @@ func Open(proj string, widthPercent int) error {
 func openTmux(proj string, widthPercent int) error {
 	// Kill any existing taskboard tui panes before opening a new one.
 	killTmuxTUIPanes()
-	return exec.Command(
+	cmd := exec.Command(
 		"tmux", "split-window", "-h",
 		"-p", strconv.Itoa(widthPercent),
 		selfexec.Path(), "tui", "--project", proj,
-	).Run()
+	)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			fmt.Fprintf(os.Stderr, "tmux split-window: %s\n", msg)
+		}
+		fmt.Printf("Run 'taskboard tui --project %s' in a new terminal pane.\n", proj)
+		return nil
+	}
+	return nil
 }
 
 // killTmuxTUIPanes kills all tmux panes whose command is "taskboard", skipping the caller's own pane.
