@@ -1,10 +1,10 @@
 ---
 description: >
-  taskboard CLI task board coordinator. Identical to /firefox-manager but backed by the taskboard Go binary. Triggers on: "/taskboard", "start taskboard", "open taskboard session".
+  Taskboard session coordinator for Firefox bug work. Manages investigation and build agents via the taskboard CLI. Triggers on: "/taskboard", "start taskboard", "open taskboard session".
 allowed-tools: [Agent, Read, Write, Bash, TaskCreate, TaskUpdate, TaskList, TaskGet, AskUserQuestion]
 ---
 
-# Firefox Manager Session
+# Taskboard Session
 
 You are the **manager session** — a thin coordinator. Your job is routing, not
 understanding. Bug details stay in investigation agents. Build details stay in
