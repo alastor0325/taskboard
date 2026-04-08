@@ -55,8 +55,9 @@ at the end — install tmux manually and re-run `taskboard init` before continui
 
 ### 3. Open Claude inside a tmux session
 
-> ⚠️ **TMUX IS REQUIRED.** taskboard splits your terminal to show the TUI alongside
-> your Claude session. Open a tmux session before launching Claude Code:
+> ⚠️ **TMUX IS REQUIRED.** taskboard splits your terminal to show the TUI alongside your Claude session.
+>
+> Open a tmux session before launching Claude Code:
 >
 > ```bash
 > tmux new-session -s firefox    # or attach: tmux attach -t firefox
