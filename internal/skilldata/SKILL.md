@@ -409,8 +409,16 @@ Reply immediately without waiting: "Investigating bug X in background."
 Multiple investigation agents run fully in parallel. Always spawn immediately
 and return control to the user.
 
-When notified of completion: read team.json, report only the one-line `summary`
-and `build_type`. Nothing more.
+When a SendMessage arrives from `inv-{id}` reporting completion:
+
+1. **Auto-heal stale task card** — before reporting to the user, check team.json:
+   - If `investigation_agents[id].status == "waiting"` AND `tasks[id].status != "waiting"`:
+     ```bash
+     taskboard set-task {id} --status waiting \
+       --note "Awaiting approval — [Investigation]({url from agent message or team.json})"
+     ```
+   - Only correct `running → waiting`. Never overwrite `done`, `approved`, or any other status.
+2. Read team.json, report only the one-line `summary` and `build_type`. Nothing more.
 
 ### Discuss a bug
 
@@ -585,16 +593,25 @@ When root cause is identified (between investigation and writing the file):
 5. Update team.json (path: `echo ~/.taskboard/${PROJECT}/team.json`):
    - Set investigation_agents.XXXXXX.build_type and claimed_files
    - Set investigation_agents.XXXXXX.summary: one routing-only line, no technical details
-6. Push the investigation file to GitHub first (so the link is live), then update the task card (manager already created it at spawn). The note MUST include a hyperlink to the investigation file. Derive the GitHub URL from the actual local file path you wrote — take the filename and replace the local base path with the GitHub base URL:
+6. Push the investigation file to GitHub first (so the link is live).
+
+**BEFORE sending any message to the manager, you MUST run these two commands in order and confirm both succeed:**
+
    ```bash
    # INV_FILE is the actual path you wrote, e.g. ~/firefox-bug-investigation/bug-XXXXXX-investigation.md
    INV_FILENAME=$(basename "${INV_FILE}")
    INV_URL="https://github.com/alastor0325/firefox-bug-investigation/blob/main/${INV_FILENAME}"
+
+   # Step 1 — update task card (MUST succeed before continuing)
    taskboard set-task XXXXXX \
      --summary "<confirmed final one-liner>" --status waiting \
      --note "Awaiting approval — [Investigation](${INV_URL})"
+
+   # Step 2 — update agent status (MUST succeed before continuing)
    taskboard event waiting inv-XXXXXX "Investigation complete, awaiting approval"
    ```
+
+Only after **both commands exit 0**: SendMessage to "manager".
 
 Then STOP. Present only this to the manager:
   "Bug XXXXXX ready. [one-line summary]. Build type: {type}."
