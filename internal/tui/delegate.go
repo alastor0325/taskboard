@@ -30,13 +30,13 @@ func (d taskDelegate) Spacing() int                            { return 0 }
 func (d taskDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
 
 var (
-	noteWaitingStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
-	notePlainStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	worktreeStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	invStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Faint(true)
-	btwCardStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
-	dimStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	doneExpiryStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Italic(true)
+	noteWaitingStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
+	notePlainStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	worktreeStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	invStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Faint(true)
+	btwCardStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("75")).Bold(true)
+	dimStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	doneExpiryStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Italic(true)
 )
 
 // isBugID returns true if the task name is a numeric Bugzilla bug ID.

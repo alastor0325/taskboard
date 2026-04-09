@@ -202,17 +202,17 @@ func (m Model) renderFooter() string {
 }
 
 var (
-	overlayLabelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	overlaySepStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	overlayValueStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-	overlayDimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	overlayAgentStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
-	overlayFileStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
+	overlayLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	overlaySepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	overlayValueStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+	overlayDimStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	overlayAgentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))
+	overlayFileStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Italic(true)
 )
 
 func overlaySection(title string, w int) string {
 	bar := strings.Repeat("─", max(0, w-2-len(title)-1))
-	return overlaySepStyle.Render("─ "+title+" "+bar)
+	return overlaySepStyle.Render("─ " + title + " " + bar)
 }
 
 func overlayRow(label, value string) string {
@@ -243,16 +243,16 @@ func renderOverlay(item taskItem, width, height int, behind string) string {
 		if item.invAgentID != "" {
 			invLine := overlayAgentStyle.Render(item.invAgentID)
 			if item.invAgentStatus != "" {
-				invLine += overlayDimStyle.Render("  "+item.invAgentStatus)
+				invLine += overlayDimStyle.Render("  " + item.invAgentStatus)
 			}
 			if item.invBuildType != "" {
-				invLine += overlayDimStyle.Render("  "+item.invBuildType+" build")
+				invLine += overlayDimStyle.Render("  " + item.invBuildType + " build")
 			}
 			lines = append(lines, overlayLabelStyle.Render("  investigation  ")+invLine)
 		}
 		if item.buildAgentName != "" {
 			buildLine := overlayAgentStyle.Render(item.buildAgentName)
-			buildLine += overlayDimStyle.Render("  "+item.buildAgentStatus)
+			buildLine += overlayDimStyle.Render("  " + item.buildAgentStatus)
 			if item.buildQueuePos == 0 {
 				buildLine += overlayDimStyle.Render("  (building now)")
 			} else if item.buildQueuePos > 0 {

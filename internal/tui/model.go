@@ -52,16 +52,16 @@ type Model struct {
 }
 
 type taskItem struct {
-	bugID          string
-	summary        string
-	status         string
-	note           string
-	tryURL         string
-	revURL         string
-	worktree       string
-	btwMsg         string
-	hasInv         bool
-	doneAt         float64 // unix timestamp, non-zero only when status=="done"
+	bugID    string
+	summary  string
+	status   string
+	note     string
+	tryURL   string
+	revURL   string
+	worktree string
+	btwMsg   string
+	hasInv   bool
+	doneAt   float64 // unix timestamp, non-zero only when status=="done"
 	// investigation agent
 	invAgentID     string
 	invAgentStatus string
@@ -382,15 +382,15 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 		}
 
 		item := taskItem{
-			bugID:    id,
-			summary:  t.Summary,
-			status:   t.Status,
-			note:     t.Note,
-			worktree: t.Worktree,
-			revURL:   revURL,
-			btwMsg:   btwMsg,
-			hasInv:   invFileExists(id),
-			doneAt:   doneAt,
+			bugID:         id,
+			summary:       t.Summary,
+			status:        t.Status,
+			note:          t.Note,
+			worktree:      t.Worktree,
+			revURL:        revURL,
+			btwMsg:        btwMsg,
+			hasInv:        invFileExists(id),
+			doneAt:        doneAt,
 			buildQueuePos: -1,
 		}
 		if inv, ok := invByBug[id]; ok {
@@ -419,7 +419,6 @@ func buildTaskItems(status types.AgentStatus) []taskItem {
 	return items
 }
 
-
 // buildBtwMap returns a map from agentName to the most recent BtwEntry for that agent.
 func buildBtwMap(entries []types.BtwEntry) map[string]types.BtwEntry {
 	m := make(map[string]types.BtwEntry)
@@ -437,7 +436,7 @@ var cachedHomeDir = sync.OnceValue(func() string {
 const worktreePatchCacheTTL = 30 * time.Second
 
 type wtCacheEntry struct {
-	has     bool
+	has       bool
 	checkedAt time.Time
 }
 
@@ -520,6 +519,10 @@ func agentColor(name string) lipgloss.Color {
 }
 
 func (m *Model) updateLogContent() {
+	// Capture scroll position before replacing content so we can restore it.
+	// When already at the bottom (including the initial empty-viewport state),
+	// auto-scroll to keep the newest entries visible — like tail -f.
+	atBottom := m.logViewport.AtBottom()
 	var lines []string
 	filter := strings.ToLower(m.filterInput)
 	for _, e := range m.allLog {
@@ -533,6 +536,9 @@ func (m *Model) updateLogContent() {
 		}
 	}
 	m.logViewport.SetContent(strings.Join(lines, "\n"))
+	if atBottom {
+		m.logViewport.GotoBottom()
+	}
 }
 
 var logLinkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("75"))

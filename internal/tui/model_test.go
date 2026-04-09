@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -685,5 +686,103 @@ func TestPollStatusIgnoresUnchangedFile(t *testing.T) {
 	m = m.pollStatus()
 	if m.lastMtime != firstMtime {
 		t.Error("pollStatus re-read unchanged file (lastMtime changed)")
+	}
+}
+
+// makeLogEntries builds N log entries for use in scroll tests.
+func makeLogEntries(n int) []types.LogEntry {
+	var entries []types.LogEntry
+	for i := 0; i < n; i++ {
+		entries = append(entries, types.LogEntry{
+			Time:    float64(time.Now().Unix()),
+			Agent:   "test-agent",
+			Message: fmt.Sprintf("log line %d", i),
+		})
+	}
+	return entries
+}
+
+// TestLogViewportAutoScrollsOnInitialLoad verifies that the first content load
+// scrolls the viewport to the bottom so the newest entries are immediately visible.
+func TestLogViewportAutoScrollsOnInitialLoad(t *testing.T) {
+	m, sf := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	m2 := updated.(Model)
+	m2.lastMtime = time.Time{}
+
+	writeStatusFile(t, sf, map[string]map[string]any{}, makeLogEntries(30), nil)
+	m2 = m2.pollStatus()
+
+	if !m2.logViewport.AtBottom() {
+		t.Error("log viewport should auto-scroll to bottom on first content load")
+	}
+}
+
+// TestLogViewportSticksToBottom verifies that while the user stays at the bottom,
+// each new poll keeps the viewport anchored to the newest entries.
+func TestLogViewportSticksToBottom(t *testing.T) {
+	m, sf := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	m2 := updated.(Model)
+	m2.lastMtime = time.Time{}
+
+	entries := makeLogEntries(30)
+	writeStatusFile(t, sf, map[string]map[string]any{}, entries, nil)
+	m2 = m2.pollStatus()
+	if !m2.logViewport.AtBottom() {
+		t.Fatal("pre-condition: should be at bottom after initial load")
+	}
+
+	// Append one more entry and poll again — must stay at bottom.
+	entries = append(entries, types.LogEntry{
+		Time:    float64(time.Now().Unix() + 1),
+		Agent:   "test-agent",
+		Message: "new entry",
+	})
+	writeStatusFile(t, sf, map[string]map[string]any{}, entries, nil)
+	m2 = m2.pollStatus()
+
+	if !m2.logViewport.AtBottom() {
+		t.Error("log viewport should stay at bottom when new entries arrive while already at bottom")
+	}
+}
+
+// TestLogViewportPreservesScrollWhenNotAtBottom verifies that if the user has
+// scrolled up, a new poll does NOT force them back to the bottom.
+func TestLogViewportPreservesScrollWhenNotAtBottom(t *testing.T) {
+	m, sf := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 20})
+	m2 := updated.(Model)
+	m2.lastMtime = time.Time{}
+
+	entries := makeLogEntries(30)
+	writeStatusFile(t, sf, map[string]map[string]any{}, entries, nil)
+	m2 = m2.pollStatus()
+	if !m2.logViewport.AtBottom() {
+		t.Fatal("pre-condition: should be at bottom after initial load")
+	}
+	if m2.logViewport.YOffset == 0 {
+		t.Skip("content fits in viewport; scroll test not applicable")
+	}
+
+	// Scroll up, away from the bottom.
+	m2.logViewport.LineUp(5)
+	savedOffset := m2.logViewport.YOffset
+	if m2.logViewport.AtBottom() {
+		t.Fatal("pre-condition: should not be at bottom after scrolling up")
+	}
+
+	// Add more entries and poll — position should be preserved.
+	entries = append(entries, types.LogEntry{
+		Time:    float64(time.Now().Unix() + 1),
+		Agent:   "test-agent",
+		Message: "new entry",
+	})
+	writeStatusFile(t, sf, map[string]map[string]any{}, entries, nil)
+	m2 = m2.pollStatus()
+
+	if m2.logViewport.YOffset != savedOffset {
+		t.Errorf("viewport should preserve scroll position when not at bottom: got offset %d, want %d",
+			m2.logViewport.YOffset, savedOffset)
 	}
 }
