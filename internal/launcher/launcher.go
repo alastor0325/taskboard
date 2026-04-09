@@ -26,29 +26,35 @@ func Open(proj string, widthPercent int) error {
 func openTmux(proj string, widthPercent int) error {
 	// Kill any existing taskboard tui panes before opening a new one.
 	killTmuxTUIPanes()
-	cmd := exec.Command(
-		"tmux", "split-window", "-h",
-		"-l", strconv.Itoa(widthPercent)+"%",
-		selfexec.Path(), "tui", "--project", proj,
-	)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	bin := selfexec.Path()
+	tmuxArgs := []string{
+		"split-window", "-h",
+		"-l", strconv.Itoa(widthPercent) + "%",
+		bin, "tui", "--project", proj,
+	}
+	cmd := exec.Command("tmux", tmuxArgs...)
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
-		return fmtCmdErr("tmux split-window", err, stderr.String())
+		return fmtCmdErr("tmux "+strings.Join(tmuxArgs, " "), err, buf.String())
 	}
 	return nil
 }
 
 func openZellij(proj string) error {
-	cmd := exec.Command(
-		"zellij", "action", "new-pane",
+	bin := selfexec.Path()
+	zellijArgs := []string{
+		"action", "new-pane",
 		"--direction", "right",
-		"--", selfexec.Path(), "tui", "--project", proj,
-	)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+		"--", bin, "tui", "--project", proj,
+	}
+	cmd := exec.Command("zellij", zellijArgs...)
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
-		return fmtCmdErr("zellij new-pane", err, stderr.String())
+		return fmtCmdErr("zellij "+strings.Join(zellijArgs, " "), err, buf.String())
 	}
 	return nil
 }
