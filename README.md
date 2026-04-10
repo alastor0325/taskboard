@@ -171,6 +171,35 @@ Global flag:
   --project <name>                       # override project detection
 ```
 
+### Task state transitions
+
+```
+     (new)
+       │
+       ▼
+    running ◄──────────────┐
+     │  │  │               │
+     ▼  │  ▼               │
+   idle │ waiting ─────────┤
+     │  │  │               │
+     └──┤  │        failed ┘
+        │  │          ▲
+        ▼  ▼          │
+        done      (MarkAgentDead)
+```
+
+| From | To |
+|---|---|
+| *(new)* | running |
+| running | idle, waiting, done |
+| waiting | running, idle, done |
+| idle | running, done |
+| failed | running, waiting, idle, done |
+| done | *(terminal)* |
+
+`done-task` bypasses the transition table and always succeeds regardless of current state.
+`set-task --status` enforces the table.
+
 ### Project detection order
 
 1. `--project` flag or `TASKBOARD_PROJECT` env var
