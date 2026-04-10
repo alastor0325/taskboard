@@ -165,6 +165,7 @@ taskboard watcher                        # start watcher daemon
 taskboard healthcheck                    # run one healthcheck pass
 taskboard upgrade [version]              # upgrade binary + skill (default: latest)
 taskboard install-skill                  # install bundled skill to ~/.claude/skills/taskboard/
+taskboard version                        # print version
 
 Global flag:
   --project <name>                       # override project detection

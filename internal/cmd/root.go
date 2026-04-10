@@ -3,9 +3,24 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/alastor0325/taskboard/internal/project"
 )
+
+// Version is set at build time via -ldflags "-X github.com/alastor0325/taskboard/internal/cmd.Version=vX.Y.Z".
+// Falls back to the module version embedded by go install.
+var Version = "dev"
+
+func resolvedVersion() string {
+	if Version != "dev" {
+		return Version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return Version
+}
 
 func Execute() error {
 	if len(os.Args) < 2 {
@@ -80,6 +95,9 @@ func Execute() error {
 		return runOpen(args)
 	case "review-server":
 		return runReviewServer(args)
+	case "version", "--version", "-v":
+		fmt.Println(resolvedVersion())
+		return nil
 	case "--help", "-h", "help":
 		printUsage()
 		return nil
@@ -115,6 +133,7 @@ Subcommands:
   watcher                         start watcher daemon
   healthcheck                     run healthcheck pass
   open                            split pane + launch tui
+  version                         print version
 
 Global flags:
   --project <name>                override project detection
