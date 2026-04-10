@@ -129,6 +129,8 @@ Each card shows:
 | `Enter` | TASKS | Open task detail overlay |
 | `ESC` | Overlay | Close overlay |
 | `/` | LOG | Filter log |
+| `[` / `]` | Global | Shrink / grow task pane (split ratio) |
+| `,` / `.` | Global (tmux) | Resize tmux pane left / right |
 | `q` / `ESC` | Global | Quit |
 | Mouse wheel | Focused pane | Scroll |
 
@@ -153,6 +155,7 @@ taskboard file-conflicts <bug_id>        # detect file overlap with other agents
 taskboard log <agent> <message>          # append log entry
 taskboard btw <agent> <message>          # volatile heartbeat (TTL 120s)
 taskboard event <type> <agent> <msg>     # structured milestone (routes to Matrix)
+taskboard notify <log|alert|done> <msg>  # Matrix notification + log entry
 taskboard agent-health <file> [secs]     # liveness check by output file mtime
 taskboard check-build-progress <dir>     # build stall detection
 taskboard detect                         # print detected project name
@@ -160,6 +163,8 @@ taskboard tui                            # launch TUI in current terminal
 taskboard open [--width <pct>]           # split tmux pane and launch TUI
 taskboard watcher                        # start watcher daemon
 taskboard healthcheck                    # run one healthcheck pass
+taskboard upgrade [version]              # upgrade binary + skill (default: latest)
+taskboard install-skill                  # install bundled skill to ~/.claude/skills/taskboard/
 
 Global flag:
   --project <name>                       # override project detection
