@@ -17,6 +17,7 @@ var validTransitions = map[string]map[string]bool{
 	"idle":    {"running": true, "done": true},
 	"waiting": {"running": true, "idle": true, "done": true},
 	"running": {"idle": true, "waiting": true, "done": true},
+	"failed":  {"running": true, "waiting": true, "idle": true, "done": true},
 	"done":    {},
 }
 
@@ -143,8 +144,10 @@ func (s *TaskStore) MarkDone(bugID string) (*Team, error) {
 		team.Tasks[bugID] = task
 	}
 	task.Status = "done"
-	now := float64(time.Now().Unix())
-	task.DoneAt = &now
+	if task.DoneAt == nil {
+		now := float64(time.Now().Unix())
+		task.DoneAt = &now
+	}
 	s.syncAgentStatus(team, bugID, "done")
 	return team, s.Save(team)
 }

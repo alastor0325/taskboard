@@ -114,6 +114,11 @@ func TestValidTransitions(t *testing.T) {
 		{"done", "running", false},
 		{"running", "running", false}, // same status, no-op in SetTask
 		{"idle", "waiting", false},
+		// failed tasks can be reset to any active state or marked done
+		{"failed", "running", true},
+		{"failed", "waiting", true},
+		{"failed", "idle", true},
+		{"failed", "done", true},
 	}
 	for _, c := range cases {
 		s := tmpStore(t)
@@ -157,6 +162,24 @@ func TestMarkDone(t *testing.T) {
 	ts := int64(*task.DoneAt)
 	if ts < before || ts > after {
 		t.Errorf("DoneAt %d not in range [%d, %d]", ts, before, after)
+	}
+}
+
+func TestMarkDonePreservesDoneAt(t *testing.T) {
+	s := tmpStore(t)
+	status := "running"
+	s.SetTask("5", SetTaskOpts{Status: &status})
+	s.MarkDone("5")
+
+	team, _ := s.Load()
+	original := *team.Tasks["5"].DoneAt
+
+	// Calling MarkDone again must NOT reset DoneAt.
+	s.MarkDone("5")
+	team, _ = s.Load()
+	if *team.Tasks["5"].DoneAt != original {
+		t.Errorf("MarkDone reset DoneAt on already-done task: got %v, want %v",
+			*team.Tasks["5"].DoneAt, original)
 	}
 }
 
