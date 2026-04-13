@@ -799,7 +799,12 @@ Skill("firefox-implementation")
 
 This is a concrete tool call, not a mental reference. The skill drives the
 entire implementation session, including:
-- Worktree creation (`git worktree add ~/firefox-{id}`) — immediately after which you MUST call:
+- Worktree creation (`git worktree add ~/firefox-{id}`) — **ALWAYS branch off `main`**, never off another bug's feature branch:
+  ```bash
+  # In ~/firefox (the main repo, not another worktree):
+  git worktree add ~/firefox-{bug_id} -b bug-{bug_id} main
+  ```
+  Immediately after which you MUST call:
   ```bash
   taskboard set-task {bug_id} --worktree ~/firefox-{bug_id}
   ```
