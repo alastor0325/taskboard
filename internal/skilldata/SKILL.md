@@ -718,12 +718,22 @@ in team.json as build_agents.{type}.obj_dir.
 ## Try push authentication
 
 If `mach try` outputs a URL requiring authentication (look for a line containing
-`https://` and `auth` or `login`), immediately emit the event before opening the URL:
-```bash
-taskboard event try-auth {agent_name} \
-  "Bug {id}: try push needs auth — {url}"
-```
-Then proceed to open the auth URL as usual.
+`https://` and `user_code` or `activate`):
+
+1. Extract the URL and user code from the output.
+2. Immediately emit these two commands:
+   ```bash
+   taskboard event try-auth {agent_name} \
+     "Bug {id}: try push needs auth — {url} Code: {code}"
+   taskboard set-task {bug_id} --status waiting \
+     --note "Try push needs auth — waiting for browser completion"
+   ```
+3. SendMessage to "manager": "Try push needs browser auth. URL: {url} Code: {code}. Will retry automatically."
+4. Sleep 30 seconds, then retry the same `./mach try` command. Auth token is cached after browser completion.
+5. If auth is requested again, sleep 30s and retry. Repeat up to 5 times.
+6. On success, emit `try-pushed` and update the task card as normal.
+
+Never exit after showing the auth URL. The retry loop is mandatory.
 
 ## Try push logging
 
