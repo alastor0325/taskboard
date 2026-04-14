@@ -19,6 +19,7 @@ var (
 	btwStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	footerStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	footerFilterStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("82"))
+	watcherDeadStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
 	overlayStyle      = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("62")).
@@ -36,13 +37,13 @@ func (m Model) View() string {
 	logSection := m.renderLog()
 	footer := m.renderFooter()
 
-	main := lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		tasksSection,
-		logSection,
-		btwBar,
-		footer,
-	)
+	rows := []string{header}
+	if m.watcherDead {
+		rows = append(rows, watcherDeadStyle.Render("⚠ watcher dead — data may be stale  (run: taskboard watcher)"))
+	}
+	rows = append(rows, tasksSection, logSection, btwBar, footer)
+
+	main := lipgloss.JoinVertical(lipgloss.Left, rows...)
 
 	if m.overlay != nil {
 		return renderOverlay(m.overlay.item, m.width, m.height, main)

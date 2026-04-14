@@ -15,7 +15,10 @@ import (
 	"github.com/alastor0325/taskboard/internal/store"
 )
 
-const pollInterval = time.Second
+const (
+	pollInterval      = time.Second
+	heartbeatInterval = 10 * time.Second
+)
 
 func Run(proj string) error {
 	safe := project.Sanitize(proj)
@@ -26,8 +29,12 @@ func Run(proj string) error {
 	}
 	defer os.Remove(pidFile)
 
+	hbFile := project.WatcherHeartbeatFile(proj)
+	touchHeartbeat(hbFile) // write immediately on startup
+
 	teamFile := project.TeamFile(proj)
 	var lastMtime time.Time
+	var lastHB time.Time
 
 	st := store.New(project.TeamFile(proj))
 	for {
@@ -40,7 +47,24 @@ func Run(proj string) error {
 			exec.Command(selfexec.Path(), "sync", "--project", proj).Run()
 		}
 		checkRelaunchMarker(proj, safe)
+		if time.Since(lastHB) >= heartbeatInterval {
+			touchHeartbeat(hbFile)
+			lastHB = time.Now()
+		}
 		time.Sleep(pollInterval)
+	}
+}
+
+// touchHeartbeat updates the mtime of the heartbeat file so the TUI can
+// detect a dead watcher when the file goes stale.
+func touchHeartbeat(path string) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	now := time.Now()
+	if err := os.Chtimes(path, now, now); err != nil {
+		// File may not exist yet — create it.
+		os.WriteFile(path, nil, 0o644) //nolint:errcheck
 	}
 }
 

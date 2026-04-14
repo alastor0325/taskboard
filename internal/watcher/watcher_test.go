@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/alastor0325/taskboard/internal/store"
 )
@@ -130,6 +131,42 @@ func TestCheckRelaunchMarkerRemovesMarkerWhenLockFree(t *testing.T) {
 
 	if _, err := os.Stat(marker); err == nil {
 		t.Error("marker should have been removed when lock was free")
+	}
+}
+
+func TestTouchHeartbeatCreatesFile(t *testing.T) {
+	dir := t.TempDir()
+	hbFile := filepath.Join(dir, "watcher-heartbeat")
+
+	before := time.Now()
+	touchHeartbeat(hbFile)
+	after := time.Now()
+
+	info, err := os.Stat(hbFile)
+	if err != nil {
+		t.Fatalf("heartbeat file not created: %v", err)
+	}
+	if info.ModTime().Before(before) || info.ModTime().After(after.Add(time.Second)) {
+		t.Errorf("heartbeat mtime %v not in expected range [%v, %v]", info.ModTime(), before, after)
+	}
+}
+
+func TestTouchHeartbeatUpdatesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	hbFile := filepath.Join(dir, "watcher-heartbeat")
+
+	// Create with old mtime.
+	os.WriteFile(hbFile, nil, 0o644)
+	old := time.Now().Add(-60 * time.Second)
+	os.Chtimes(hbFile, old, old)
+
+	before := time.Now()
+	touchHeartbeat(hbFile)
+	after := time.Now()
+
+	info, _ := os.Stat(hbFile)
+	if !info.ModTime().After(before.Add(-time.Second)) || info.ModTime().After(after.Add(time.Second)) {
+		t.Errorf("heartbeat mtime not updated: got %v", info.ModTime())
 	}
 }
 

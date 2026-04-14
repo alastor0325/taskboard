@@ -51,7 +51,7 @@ func newTestModel(t *testing.T) (Model, string) {
 		},
 		nil,
 	)
-	m := New("test", sf)
+	m := New("test", sf, "")
 	return m, sf
 }
 
@@ -784,5 +784,74 @@ func TestLogViewportPreservesScrollWhenNotAtBottom(t *testing.T) {
 	if m2.logViewport.YOffset != savedOffset {
 		t.Errorf("viewport should preserve scroll position when not at bottom: got offset %d, want %d",
 			m2.logViewport.YOffset, savedOffset)
+	}
+}
+
+func TestWatcherDeadWhenHeartbeatMissing(t *testing.T) {
+	m, _ := newTestModel(t)
+	// No heartbeat file set — watcherDead should remain false (can't distinguish
+	// "watcher never started" from "file missing").
+	m = m.pollStatus()
+	if m.watcherDead {
+		t.Error("watcherDead should be false when heartbeat file does not exist")
+	}
+}
+
+func TestWatcherDeadWhenHeartbeatStale(t *testing.T) {
+	dir := t.TempDir()
+	hbFile := filepath.Join(dir, "watcher-heartbeat")
+	// Write a heartbeat file with a mtime 60s in the past.
+	if err := os.WriteFile(hbFile, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-60 * time.Second)
+	if err := os.Chtimes(hbFile, past, past); err != nil {
+		t.Fatal(err)
+	}
+
+	sf := filepath.Join(dir, "agent-status.json")
+	m := New("test", sf, hbFile)
+	m = m.pollStatus()
+	if !m.watcherDead {
+		t.Error("watcherDead should be true when heartbeat is 60s old (threshold is 30s)")
+	}
+}
+
+func TestWatcherAliveWhenHeartbeatFresh(t *testing.T) {
+	dir := t.TempDir()
+	hbFile := filepath.Join(dir, "watcher-heartbeat")
+	if err := os.WriteFile(hbFile, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sf := filepath.Join(dir, "agent-status.json")
+	m := New("test", sf, hbFile)
+	m = m.pollStatus()
+	if m.watcherDead {
+		t.Error("watcherDead should be false when heartbeat is fresh")
+	}
+}
+
+func TestWatcherDeadBannerAppearsInView(t *testing.T) {
+	m, _ := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+	m2.watcherDead = true
+
+	view := m2.View()
+	if !strings.Contains(view, "watcher dead") {
+		t.Errorf("View() should show watcher dead banner, got: %q", view[:min(300, len(view))])
+	}
+}
+
+func TestWatcherAliveBannerAbsentInView(t *testing.T) {
+	m, _ := newTestModel(t)
+	updated, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m2 := updated.(Model)
+	m2.watcherDead = false
+
+	view := m2.View()
+	if strings.Contains(view, "watcher dead") {
+		t.Errorf("View() should NOT show watcher dead banner when watcher is alive")
 	}
 }

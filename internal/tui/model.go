@@ -32,23 +32,29 @@ const (
 	focusLog
 )
 
+// watcherDeadThreshold is how long the heartbeat file can go without being
+// touched before the TUI considers the watcher dead.
+const watcherDeadThreshold = 30 * time.Second
+
 type Model struct {
-	proj        string
-	statusFile  string
-	width       int
-	height      int
-	focus       focus
-	splitRatio  int // percentage of body height allocated to tasks (20–80)
-	taskList    list.Model
-	logViewport viewport.Model
-	btw         []types.BtwEntry
-	spinner     spinner.Model
-	overlay     *taskDetail
-	filterInput string
-	filtering   bool
-	lastMtime   time.Time
-	allLog      []types.LogEntry
-	tasks       []taskItem
+	proj          string
+	statusFile    string
+	heartbeatFile string
+	width         int
+	height        int
+	focus         focus
+	splitRatio    int // percentage of body height allocated to tasks (20–80)
+	taskList      list.Model
+	logViewport   viewport.Model
+	btw           []types.BtwEntry
+	spinner       spinner.Model
+	overlay       *taskDetail
+	filterInput   string
+	filtering     bool
+	lastMtime     time.Time
+	allLog        []types.LogEntry
+	tasks         []taskItem
+	watcherDead   bool
 }
 
 type taskItem struct {
@@ -79,7 +85,7 @@ type taskDetail struct {
 
 var urlRe = regexp.MustCompile(`https?://\S+`)
 
-func New(proj, statusFile string) Model {
+func New(proj, statusFile, heartbeatFile string) Model {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 
@@ -96,13 +102,14 @@ func New(proj, statusFile string) Model {
 	vp.MouseWheelDelta = 3
 
 	return Model{
-		proj:        proj,
-		statusFile:  statusFile,
-		focus:       focusTasks,
-		splitRatio:  50,
-		taskList:    tl,
-		logViewport: vp,
-		spinner:     sp,
+		proj:          proj,
+		statusFile:    statusFile,
+		heartbeatFile: heartbeatFile,
+		focus:         focusTasks,
+		splitRatio:    50,
+		taskList:      tl,
+		logViewport:   vp,
+		spinner:       sp,
 	}
 }
 
@@ -302,6 +309,11 @@ func (m *Model) relayout() Model {
 }
 
 func (m *Model) pollStatus() Model {
+	// Check watcher liveness via heartbeat file mtime.
+	if info, err := os.Stat(m.heartbeatFile); err == nil {
+		m.watcherDead = time.Since(info.ModTime()) > watcherDeadThreshold
+	}
+
 	info, err := os.Stat(m.statusFile)
 	if err != nil {
 		return *m

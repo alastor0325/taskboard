@@ -64,6 +64,12 @@ func StatusFile(project string) string {
 	return filepath.Join(os.Getenv("HOME"), ".taskboard", project, "agent-status.json")
 }
 
+// WatcherHeartbeatFile returns the path to the watcher heartbeat file.
+// The watcher touches this file every 10s; the TUI warns if it goes stale.
+func WatcherHeartbeatFile(project string) string {
+	return filepath.Join(os.Getenv("HOME"), ".taskboard", project, "watcher-heartbeat")
+}
+
 func tmuxSession() string {
 	out, err := exec.Command("tmux", "display-message", "-p", "#S").Output()
 	if err != nil {

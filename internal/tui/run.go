@@ -16,9 +16,10 @@ import (
 // Run starts the TUI for the given project.
 func Run(proj string) error {
 	statusFile := project.StatusFile(proj)
+	heartbeatFile := project.WatcherHeartbeatFile(proj)
 	ensureReviewServer()
 
-	m := New(proj, statusFile)
+	m := New(proj, statusFile, heartbeatFile)
 	p := tea.NewProgram(
 		m,
 		tea.WithAltScreen(),
