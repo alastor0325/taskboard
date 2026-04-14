@@ -133,7 +133,9 @@ func TestFmtCmdErr(t *testing.T) {
 // --- Open routing ---
 
 func TestOpenNoMultiplexer(t *testing.T) {
-	t.Setenv("TMUX", "")
+	orig := tmuxAvailable
+	tmuxAvailable = func() bool { return false }
+	defer func() { tmuxAvailable = orig }()
 	t.Setenv("ZELLIJ_SESSION_NAME", "")
 
 	// Should not error — just prints a message when no multiplexer is detected.

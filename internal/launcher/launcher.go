@@ -11,9 +11,14 @@ import (
 	"github.com/alastor0325/taskboard/internal/selfexec"
 )
 
+// tmuxAvailable is a variable so tests can override it without shelling out.
+var tmuxAvailable = func() bool {
+	return exec.Command("tmux", "ls").Run() == nil
+}
+
 // Open detects the active multiplexer and splits a pane for the TUI.
 func Open(proj string, widthPercent int) error {
-	if os.Getenv("TMUX") != "" {
+	if tmuxAvailable() {
 		return openTmux(proj, widthPercent)
 	}
 	if os.Getenv("ZELLIJ_SESSION_NAME") != "" {

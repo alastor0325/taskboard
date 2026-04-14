@@ -369,11 +369,8 @@ Notes:
 Print: `✓ Watcher: started`
 Print: `✓ Healthcheck cron: installed` (or "already present")
 
-**CRITICAL — TUI launch is USER-ONLY. Never run `taskboard open`, `taskboard tui`, `tmux`, or any split-pane command via the Bash tool.** These require a real TTY and will be blocked. Instead, output this line verbatim and tell the user to paste it:
-```
-! taskboard open --project ${PROJECT}
-```
-Print: `✓ TUI: paste the line above into your terminal to open the dashboard`
+Run `taskboard open --project ${PROJECT}` via the Bash tool. This detects the running tmux server and splits a pane automatically.
+Print: `✓ TUI: opened`
 
 **Final line** (after all steps):
 ```
