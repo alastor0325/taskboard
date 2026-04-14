@@ -347,6 +347,15 @@ taskboard check-build-progress "{obj_dir}"
   "Build stalled — no compiler activity for 30+ min. Last artifact: {last_artifact}. Restart the build."
 - `no_artifacts` → build has not started yet; agent may be at an early step (pre-build), ignore.
 
+**For each alive build agent actively running a try push** (task note contains "Try" or "try"), check the log for recent `try-auth` events:
+```bash
+taskboard log manager "checking for try-auth events" 2>/dev/null; \
+  grep "try-auth" ~/.taskboard/{PROJECT}/log.jsonl 2>/dev/null | tail -5
+```
+If a `try-auth` event appears that has not yet been relayed to the user (within the last 5 minutes), immediately relay it:
+"Build agent needs browser auth for bug {id}. URL: {url} Code: {code}. Please complete in your browser — agent will retry automatically."
+Do not wait for the next healthcheck cycle. Relay it now.
+
 Print: `✓ Agents: {N} alive, {M} dead, {K} stalled` (list names in each category)
 
 **For each dead agent, auto-respawn immediately** — do not ask the user:
@@ -721,14 +730,15 @@ If `mach try` outputs a URL requiring authentication (look for a line containing
 `https://` and `user_code` or `activate`):
 
 1. Extract the URL and user code from the output.
-2. Immediately emit these two commands:
+2. **Immediately SendMessage to "manager"** (do this first, before anything else):
+   "Try push needs browser auth. URL: {url} Code: {code}. Will retry automatically in 30s."
+3. Then emit the taskboard commands:
    ```bash
    taskboard event try-auth {agent_name} \
      "Bug {id}: try push needs auth — {url} Code: {code}"
    taskboard set-task {bug_id} --status waiting \
      --note "Try push needs auth — waiting for browser completion"
    ```
-3. SendMessage to "manager": "Try push needs browser auth. URL: {url} Code: {code}. Will retry automatically."
 4. Sleep 30 seconds, then retry the same `./mach try` command. Auth token is cached after browser completion.
 5. If auth is requested again, sleep 30s and retry. Repeat up to 5 times.
 6. On success, emit `try-pushed` and update the task card as normal.
